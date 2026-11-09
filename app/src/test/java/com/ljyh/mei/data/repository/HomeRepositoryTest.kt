@@ -47,7 +47,8 @@ class HomeRepositoryTest {
     }
 
     @Test fun profileEntryKeepsLoadingAndTemporaryFailuresOutOfTheLoginFlow() {
-        val profile = SourceProfileState(providerId = "netease", featureRoutes = setOf("account/home", "account/login"))
+        val profile = SourceProfileState(providerId = "netease", featureRoutes = setOf("account/home", "account/login"),
+            features = mapOf("login" to setOf("webLogin", "loginWithMobilePassword", "requestMobileSmsCode", "loginWithMobileSms")))
         val account = SourceAccount(SourceAccountRef(ProviderInstanceId("fixture:netease"), ProviderAccountId("account")), "Account")
 
         assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(profile))
@@ -56,6 +57,7 @@ class HomeRepositoryTest {
         assertNull(sourceProfileFeatureScreen(profile.copy(loading = true)))
         assertNull(sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.NETWORK)))
         assertNull(sourceProfileFeatureScreen(profile.copy(error = SourceErrorCode.TIMEOUT)))
+        assertNull(sourceProfileFeatureScreen(profile.copy(providerId = "qq", features = mapOf("login" to setOf("webLogin")))))
         assertEquals(Screen.AccountHome, sourceProfileFeatureScreen(profile.copy(account = account, loading = true)))
         assertEquals(Screen.AccountHome, sourceProfileFeatureScreen(profile.copy(account = account, error = SourceErrorCode.NETWORK)))
     }
@@ -110,7 +112,8 @@ class HomeRepositoryTest {
         registry.refresh()
         advanceUntilIdle()
         assertNull(model.state.value.account)
-        assertEquals(Screen.NeteaseLogin, sourceProfileFeatureScreen(model.state.value))
+        assertNull("A route without mobile login actions must keep the generic source account entry",
+            sourceProfileFeatureScreen(model.state.value))
         assertEquals(6, provider.reads)
     }
 

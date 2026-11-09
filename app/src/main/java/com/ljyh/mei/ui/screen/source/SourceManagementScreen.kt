@@ -139,6 +139,10 @@ fun SourceManagementScreen(
                             GlasmioListRow(title = "启用", showDisclosure = false, trailing = {
                                 MeiloXSwitch(plugin.enabled, { viewModel.enabled(plugin, it) }, enabled = !working)
                             })
+                            if ("webLogin" in plugin.manifest.features["login"].orEmpty()) {
+                                GlasmioListRow(title = "网页登录", systemName = "globe", enabled = !working && plugin.status == SourceStatus.READY,
+                                    onClick = { viewModel.webLogin(plugin.manifest.providerId) })
+                            }
                             plugin.manifest.config.forEach { field ->
                                 GlasmioTextField(
                                     value = configuration[field.key].orEmpty(),

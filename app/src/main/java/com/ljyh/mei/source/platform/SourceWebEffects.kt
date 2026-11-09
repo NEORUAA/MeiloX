@@ -1,6 +1,8 @@
 package com.ljyh.mei.source.platform
 
 import android.os.Looper
+import androidx.webkit.Profile
+import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewFeature
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -14,14 +16,68 @@ import com.ljyh.mei.source.script.ScriptNetworkPolicy
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+private val sourceWebSessionProfileName = Regex("meilox-source-session-[0-9a-f]{64}")
+private val sourceWebTemporaryProfileName = Regex("meilox-source-tmp-[0-9a-f]{64}")
+private var sourceWebProfilesPruned = false
+private val sourceWebCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+/** Delete only one-shot temporary records before the first source profile is loaded this process. */
+internal fun createSourceWebProfile(name: String): Profile {
+    check(Looper.myLooper() == Looper.getMainLooper())
+    require(sourceWebSessionProfileName.matches(name) || sourceWebTemporaryProfileName.matches(name))
+    val store = ProfileStore.getInstance()
+    if (!sourceWebProfilesPruned) {
+        sourceWebProfilesPruned = true
+        try {
+            store.allProfileNames.filter(sourceWebTemporaryProfileName::matches).forEach { previous ->
+                try { store.deleteProfile(previous) }
+                catch (error: Exception) {
+                    // An already loaded record stays isolated and can be removed next process.
+                    android.util.Log.w("SourceWebProfiles", "Profile retirement failed kind=${error.javaClass.name}")
+                }
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("SourceWebProfiles", "Profile enumeration failed kind=${error.javaClass.name}")
+        }
+    }
+    return store.getOrCreateProfile(name)
+}
+
+/** Run after the WebView and transport close. Persistent session data is intentionally retained. */
+internal fun clearSourceWebProfile(profile: Profile, onCleared: (Boolean) -> Unit = {}) {
+    check(Looper.myLooper() == Looper.getMainLooper())
+    require(sourceWebSessionProfileName.matches(profile.name) || sourceWebTemporaryProfileName.matches(profile.name))
+    val cookies = profile.cookieManager
+    fun complete() {
+        // Disposal cancels the page's coroutine scope; cleanup belongs to the host instead.
+        sourceWebCleanupScope.launch {
+            val flushed = try { cookies.flush(); true }
+                catch (error: Exception) {
+                    android.util.Log.w("SourceWebProfiles", "Cookie flush failed kind=${error.javaClass.name}")
+                    false
+                }
+            withContext(Dispatchers.Main.immediate) { onCleared(flushed) }
+        }
+    }
+    try {
+        complete()
+    } catch (error: Exception) {
+        android.util.Log.w("SourceWebProfiles", "Profile close failed kind=${error.javaClass.name}")
+        onCleared(false)
+    }
+}
 
 /** Trusted ownership data supplied by the calling source screen, never by page JavaScript. */
 class SourceWebOwner(

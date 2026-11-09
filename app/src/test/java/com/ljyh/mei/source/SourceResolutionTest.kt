@@ -243,7 +243,8 @@ class SourceResolutionTest {
         override var version = "1"
         override var status = SourceStatus.READY
         override var capabilities = setOf(SourceCapability.FEATURES)
-        override val features = mapOf("account" to setOf("login"), "discovery" to setOf("cloudShuffle", "officialShuffle", "shufflePolicy"))
+        override val features = mapOf("account" to setOf("login"), "login" to setOf("webLogin", "logout"),
+            "discovery" to setOf("cloudShuffle", "officialShuffle", "shufflePolicy"))
         override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow("account-A")
         val calls = mutableListOf<com.google.gson.JsonObject>()
         var indexReads = 0
@@ -335,6 +336,50 @@ class SourceResolutionTest {
         source.accountRevision.value = "account-C"
         try { invalidation.await(); fail("An unrelated account replacement must invalidate the screen") }
         catch (_: CancellationException) { }
+    }
+
+    @Test fun genericWebLoginAndLogoutKeepOwnSessionTransitionsAndRequireExplicitSuccess() = runTest {
+        val source = EffectProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(source)))
+        var opened = 0
+        val bound = BoundSourceFeatures(router, SourceFeatureExecutor(router), source, source.accountRevision.value,
+            "generic-web-login", SourceHostEffectHandler { effect, _ ->
+                assertEquals("web.auth", effect.type)
+                opened++
+                SourceHostEffectResult.Success(com.google.gson.JsonParser.parseString(
+                    """{"cookies":{"session":"fixture"},"cookie":"session=fixture","closed":true}"""))
+            })
+        source.respond = { parameters ->
+            if (!parameters.has("\$continuation")) effectEnvelope("web.auth")
+            else {
+                val callback = parameters.getAsJsonObject("\$continuation").getAsJsonObject("effect")
+                assertTrue(callback.get("ok").asBoolean)
+                assertEquals("fixture", callback.getAsJsonObject("result").getAsJsonObject("cookies").get("session").asString)
+                source.committedRevision = "logged-in"
+                com.google.gson.JsonParser.parseString("""{"authenticated":true,"id":"opaque-user"}""")
+            }
+        }
+        bound.webLogin()
+        assertEquals(1, opened)
+        assertEquals("logged-in", source.accountRevision.value)
+        bound.ensureCurrent()
+        for (invalid in listOf("{}", """{"authenticated":false}""", """{"authenticated":"true"}""", """{"status":"authenticated"}""")) {
+            source.respond = { com.google.gson.JsonParser.parseString(invalid) }
+            try { bound.webLogin(); fail("Only explicit authentication may complete the generic login flow") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
+        source.respond = {
+            source.committedRevision = "logged-out"
+            com.google.gson.JsonPrimitive(true)
+        }
+        bound.logout()
+        assertEquals("logged-out", source.accountRevision.value)
+        bound.ensureCurrent()
+        for (invalid in listOf("false", "\"true\"", "{}", "null")) {
+            source.respond = { com.google.gson.JsonParser.parseString(invalid) }
+            try { bound.logout(); fail("Logout must explicitly confirm the source session was cleared") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
     }
 
     @Test fun unavailableSourcesDistinguishMissingAccountsAndRuntimeFailuresFromDisabling() {

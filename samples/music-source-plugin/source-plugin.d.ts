@@ -118,7 +118,8 @@ export type HostEffect =
   | { type: 'files.pick'; parameters: { mimeTypes?: string[]; multiple?: false } }
   | { type: 'files.upload'; parameters: { handle: string; url: string; method: 'POST' | 'PUT'; headers?: Record<string, string>; offset: 0; length: number } }
   | { type: 'sdk.call'; parameters: { name: EffectSdk; arguments?: JsonObject } }
-  | { type: 'web.auth' | 'web.page'; parameters: WebEffectParameters }
+  | { type: 'web.auth'; parameters: WebEffectParameters & { cookieNames: string[] } }
+  | { type: 'web.page'; parameters: WebEffectParameters }
   | { type: 'qr.scan'; parameters: Record<string, never> }
   | { type: 'sms.compose'; parameters: { destination: string; body: string } }
   | { type: 'audio.capture' | 'audio.fingerprint'; parameters: JsonObject };
@@ -155,6 +156,8 @@ export interface SelectedFile {
   title?: string; artist?: string; album?: string;
   metadata?: { title?: string; artist?: string; album?: string };
 }
+/** Returned only from this effect's isolated profile and explicit Cookie whitelist.
+ * login.webLogin must verify the session before returning LoginSuccess and committing storage. */
 export type WebEffectResult = { closed: true; cookies: Record<string, string>; cookie: string } | { loginRequested: true };
 
 export type Result<T> = T | { result: T; storage?: Record<string, string> }

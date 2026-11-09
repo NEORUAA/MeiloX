@@ -26,6 +26,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
 import okio.BufferedSink
 import java.util.UUID
 import java.io.RandomAccessFile
@@ -36,8 +37,10 @@ import kotlin.coroutines.resume
 internal class SourceWebTransport(
     private val page: SourceWebRequest,
     private val cookies: CookieManager,
+    client: OkHttpClient? = null,
 ) : AutoCloseable {
     private val policy = ScriptNetworkPolicy(page.recipe.domains.toList())
+    private val networkClient = client ?: policy.client
     private val calls = ConcurrentHashMap.newKeySet<Call>()
     private val slots = Semaphore(2)
     private val closed = AtomicBoolean(false)
@@ -158,7 +161,8 @@ internal class SourceWebTransport(
         page.scope.ensureCurrent()
         val selected = linkedMapOf<String, String>()
         for (host in page.recipe.cookieHosts) {
-            for (part in cookies.getCookie("https://$host/").orEmpty().split(';')) {
+            val header = cookies.getCookie("https://$host/").orEmpty()
+            for (part in header.split(';')) {
                 val name = part.substringBefore('=').trim()
                 val value = part.substringAfter('=', "").trim()
                 if (name in page.recipe.cookieNames && value.isNotEmpty() && value.length <= 8192) {
@@ -178,7 +182,9 @@ internal class SourceWebTransport(
 
     fun intercept(request: WebResourceRequest, navigate: (String) -> Unit): WebResourceResponse { return try {
         if (request.method !in setOf("GET", "HEAD")) return blocked()
-        val response = exchange(request.url.toString(), request.method, request.requestHeaders, null, MAX_RESOURCE_BYTES)
+        val referer = request.requestHeaders.entries.firstOrNull { it.key.equals("Referer", true) }?.value
+        val response = exchange(request.url.toString(), request.method, request.requestHeaders, null, MAX_RESOURCE_BYTES,
+            referer = referer)
         if (request.isForMainFrame && response.url.substringBefore('#') != request.url.toString().substringBefore('#')) {
             navigate(page.recipe.checkedPageUrl(response.url))
             return WebResourceResponse("text/plain", "UTF-8", 204, "No Content", emptyMap(), ByteArrayInputStream(byteArrayOf()))
@@ -233,7 +239,8 @@ internal class SourceWebTransport(
                 if (requestedHeaders.any { it !in allowedHeaders } && !(credentials != "include" && "*" in allowedHeaders)) denied()
             }
         }
-        val response = exchange(url, method, effectiveHeaders, body, MAX_FETCH_BYTES, origin, credentials, fileUpload)
+        val response = exchange(url, method, effectiveHeaders, body, MAX_FETCH_BYTES, origin, credentials, fileUpload,
+            referer = originOf(origin) + "/")
         page.scope.ensureCurrent()
         JsonObject().apply {
             addProperty("url", response.url)
@@ -253,6 +260,7 @@ internal class SourceWebTransport(
         origin: String? = null,
         credentials: String = "include",
         fileUpload: Boolean = false,
+        referer: String? = null,
     ): WebReply {
         slots.acquire()
         try {
@@ -260,6 +268,7 @@ internal class SourceWebTransport(
             var target = page.recipe.checkedUrl(initialUrl)
             var currentMethod = method
             var currentBody = body
+            var currentReferer = referer?.let { runCatching { page.recipe.checkedUrl(it) }.getOrNull() }
             repeat(6) { hop ->
                 ensureCurrent()
                 val checked = policy.validateUrl(target.substringBefore('#'))
@@ -270,14 +279,15 @@ internal class SourceWebTransport(
                 policy.validateHeaders(safeHeaders)
                 safeHeaders.forEach(builder::header)
                 if (origin != null) builder.header("Origin", originOf(origin))
+                currentReferer?.let { builder.header("Referer", it) }
                 if (useCookies) cookies.getCookie(target)?.takeIf { it.length <= 16_384 }?.let { builder.header("Cookie", it) }
                 val contentType = safeHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value?.toMediaTypeOrNull()
                 val requestBody = if (currentMethod in setOf("POST", "PUT", "PATCH")) currentBody ?: byteArrayOf().toRequestBody(contentType)
                     else currentBody
                 builder.method(currentMethod, requestBody)
-                val client = if (fileUpload) policy.client.newBuilder()
+                val client = if (fileUpload) networkClient.newBuilder()
                     .callTimeout(10, java.util.concurrent.TimeUnit.MINUTES).writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build()
-                    else policy.client
+                    else networkClient
                 val call = client.newCall(builder.build())
                 calls.add(call)
                 try {
@@ -291,13 +301,15 @@ internal class SourceWebTransport(
                         }
                         if (useCookies) response.headers.values("Set-Cookie").take(64).forEach { value ->
                             if (value.length > 8192) denied()
-                            runBlocking { setCookie(target, value) }
+                            // Browsers ignore rejected server cookies without failing the page load.
+                            runBlocking { setCookie(target, value, requireAccepted = false) }
                         }
                         if (response.code in 300..399) {
                             if (hop == 5) denied()
                             val next = page.recipe.checkedUrl(response.header("Location") ?: denied(), target)
                             val becomesGet = response.code == 303 || response.code in setOf(301, 302) && currentMethod == "POST"
                             if (fileUpload && currentBody != null && !becomesGet && originOf(next) != originOf(target)) denied()
+                            currentReferer = currentReferer ?: target
                             target = next
                             if (becomesGet) {
                                 currentMethod = "GET"
@@ -331,12 +343,13 @@ internal class SourceWebTransport(
         } finally { slots.release() }
     }
 
-    private suspend fun setCookie(url: String, value: String) = withContext(Dispatchers.Main.immediate) {
+    private suspend fun setCookie(url: String, value: String, requireAccepted: Boolean = true) = withContext(Dispatchers.Main.immediate) {
         page.scope.ensureCurrent()
+        if (closed.get() || !page.isActive) denied()
         suspendCancellableCoroutine<Unit> { continuation ->
             cookies.setCookie(url, value) { accepted ->
                 if (continuation.isActive) {
-                    if (accepted) continuation.resume(Unit) else continuation.cancel()
+                    if (accepted || !requireAccepted) continuation.resume(Unit) else continuation.cancel()
                 }
             }
         }
@@ -355,8 +368,8 @@ internal class SourceWebTransport(
                 selectedFiles.clear()
             }
             chooserOrigin = null
-            policy.client.dispatcher.executorService.shutdown()
-            policy.client.connectionPool.evictAll()
+            networkClient.dispatcher.executorService.shutdown()
+            networkClient.connectionPool.evictAll()
         }
     }
 

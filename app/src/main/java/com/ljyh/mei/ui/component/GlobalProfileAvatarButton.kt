@@ -68,7 +68,9 @@ internal fun sourceProfileFeatureScreen(profile: SourceProfileState): Screen? = 
     profile.account != null && "account/home" in profile.featureRoutes -> Screen.AccountHome
     profile.account == null && !profile.loading &&
         (profile.error == null || profile.error == SourceErrorCode.AUTH_REQUIRED || profile.error == SourceErrorCode.AUTH_EXPIRED) &&
-        "account/login" in profile.featureRoutes -> Screen.NeteaseLogin
+        "account/login" in profile.featureRoutes &&
+        setOf("webLogin", "loginWithMobilePassword", "requestMobileSmsCode", "loginWithMobileSms")
+            .all { it in profile.features["login"].orEmpty() } -> Screen.NeteaseLogin
     else -> null
 }
 

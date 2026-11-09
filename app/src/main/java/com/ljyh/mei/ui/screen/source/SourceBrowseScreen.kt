@@ -960,6 +960,10 @@ fun SourceAccountScreen(
             GlasmioGroupedList {
                 GlasmioListRow(title = "配置音源", systemName = "slider.horizontal.3", showTopSeparator = false,
                     onClick = { openSourceConfiguration(pluginId, nav) })
+                if ("webLogin" in (provider as? SourceFeatureCapability)?.features?.get("login").orEmpty()) {
+                    GlasmioListRow(title = "网页登录", systemName = "globe", enabled = !busy,
+                        onClick = { viewModel.webLogin(providerId) })
+                }
                 if (account != null && pluginId != null) GlasmioListRow(title = "退出登录", systemName = "rectangle.portrait.and.arrow.right",
                     enabled = !busy, showDisclosure = false, onClick = { viewModel.signOut(providerId) })
             }

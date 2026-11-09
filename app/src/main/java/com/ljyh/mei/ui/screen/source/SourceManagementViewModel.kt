@@ -31,6 +31,7 @@ class SourceManagementViewModel @Inject constructor(
     private val manager: ScriptPluginManager,
     val resolver: PlaybackResolver,
     private val updates: SourceUpdateManager,
+    private val features: SourceFeatureClient,
 ) : ViewModel() {
     val settings = preferences.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SourceSettings())
     val providers = registry.providers
@@ -118,9 +119,7 @@ class SourceManagementViewModel @Inject constructor(
         val prepared = pending.value ?: return@action
         val installed = pendingUpdate.value?.let { updates.installReviewed(it) }
             ?: manager.install(prepared, approved = true)
-        preferences.update { settings ->
-            settings.copy(fallbackOrder = (settings.fallbackOrder + registry.playable().map { it.instanceId.value }).distinct())
-        }
+        includePlayableFallbacks()
         pending.value = null
         pendingUpdate.value = null
         editing.value?.takeIf { it.manifest.id == prepared.manifest.id }?.let {
@@ -131,6 +130,7 @@ class SourceManagementViewModel @Inject constructor(
     }
     fun enabled(plugin: InstalledPlugin, enabled: Boolean) = action {
         manager.setEnabled(plugin.manifest.id, enabled)
+        includePlayableFallbacks()
         if (editing.value?.manifest?.id == plugin.manifest.id) {
             editing.value = manager.installed.value.find { it.manifest.id == plugin.manifest.id }
         }
@@ -147,9 +147,21 @@ class SourceManagementViewModel @Inject constructor(
     }
     fun saveConfiguration(onSaved: () -> Unit = {}) = action {
         val plugin = editing.value ?: return@action
-        manager.configure(plugin.manifest.id, configuration.value)
+        val values = configuration.value.toMap()
+        if (values != manager.configuration(plugin.manifest.id)) manager.configure(plugin.manifest.id, values)
+        includePlayableFallbacks()
         resolver.invalidate()
         onSaved()
+    }
+    fun webLogin(providerId: String) = action {
+        features.bind(providerId, "source-web-login:${java.util.UUID.randomUUID()}").webLogin()
+        includePlayableFallbacks()
+        resolver.invalidate()
+    }
+    private suspend fun includePlayableFallbacks() {
+        preferences.update { settings ->
+            settings.copy(fallbackOrder = (settings.fallbackOrder + registry.playable().map { it.instanceId.value }).distinct())
+        }
     }
     fun update(transform: (SourceSettings) -> SourceSettings) = action { preferences.update(transform) }
     /** Glasmio calls this once a drag settles, with every visible instance in its new position. */

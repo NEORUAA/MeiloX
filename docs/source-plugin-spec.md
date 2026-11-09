@@ -244,9 +244,31 @@ The vendor security runtime used by `netease.securityHeaders` has process-wide s
 
 ### Web effects
 
-Web parameters include a URL/title, page `allowedHosts`, `cookieHosts`, explicit returned `cookieNames`, this source's `cookieHeaders`, fixed `bridgeAliases`, and typed `urlMappings`. Host manifest network grants bound all resource loads. Page `allowedHosts` may narrow those exact or subtree grants, but cannot broaden them; page restrictions do not implicitly authorize extra static-resource domains. Returned `cookieHosts` must be concrete hosts inside the page scope. `cookieHeaders` keys must be concrete hosts covered by the manifest grants; each header seeds only its named host, never an entire wildcard subtree. `web.auth` requires a cookie return whitelist. The result is `{closed:true,cookies:{name:value},cookie:'name=value; ...'}` from that profile only.
+Web parameters include a URL/title, optional page metadata, `cookieHosts`, explicit returned `cookieNames`, this source's `cookieHeaders`, fixed `bridgeAliases`, and typed `urlMappings`. The WebView page uses its normal network stack and may follow its own redirects and resource origins. Returned `cookieHosts` remain concrete hosts so the host exports only the requested session cookies. `cookieHeaders` keys seed only their named host. `web.auth` requires a cookie return whitelist. The result is `{closed:true,cookies:{name:value},cookie:'name=value; ...'}` from that profile only.
 
-The host requires AndroidX WebKit multi-profile and document-start support. Each interaction uses an isolated profile and destroys it on completion/cancellation. Chromium and service-worker direct network loads are blocked; a fixed host shim mediates resource/fetch/XHR/form traffic through domain/DNS/redirect checks. There is no fallback to the global CookieManager.
+Web Cookie login is source-neutral. Declare `feature.invoke`, `features.login` containing `webLogin`, `permissions.effects` containing `web.auth`, storage permission, and the required network hosts. The source settings page then exposes **Web login**. Declaring `account/login` also exposes the source's login route. A web-only source uses the shared account page; existing mobile login flows retain their own entry.
+
+The initial `login.webLogin` call returns a bounded effect, for example:
+
+```javascript
+return {
+  hostEffect: {
+    type: 'web.auth',
+    parameters: {
+      url: 'https://api.example.com/login',
+      title: 'Example Source',
+      allowedHosts: ['api.example.com'],
+      cookieHosts: ['api.example.com'],
+      cookieNames: ['SESSION']
+    }
+  },
+  continuation: {phase: 'verify-web-session'}
+};
+```
+
+After the user completes the website login and presses **Done**, the same action resumes through `parameters.$continuation`. Read its `effect.result.cookies` or `effect.result.cookie`, verify the session through the source's own account API, then return `{result:{authenticated:true,...publicProfile},storage:{...context.storage,cookie:verifiedCookie}}`. Do not return updated credentials before session verification. The host allows the final login session transition and rejects a missing, false or non-boolean `authenticated` field. Cancelled or unverified logins must retain the prior session. `login.sessionState` returns `{authenticated,kind:'web'}` or `{authenticated:false,kind:null}`; `login.logout` returns `true` while storing an explicit empty Cookie. Declare the credential key in `sessionKeys` and its account-bearing Cookie names in `sessionCookieNames`.
+
+The host requires AndroidX WebKit multi-profile support. Each provider and installation uses a stable isolated session profile, so a completed login can reuse its cookies on the next login page. Completion/cancellation closes the WebView and flushes the session profile's cookies; it does not clear the provider's session, cache or storage. A one-shot temporary profile, when used, is eligible for cold-process cleanup. WebKit cannot delete a profile already loaded in the current process, so the host removes only unloaded temporary profile records before creating the first source profile in a later process. The default profile and other profiles remain untouched. Page navigation, redirects, resource loads, service workers and third-party cookies use the WebView's normal network behavior. Plugin bridge requests remain subject to the source's declared API contract. Explicit source logout clears the source's own credentials.
 
 Prompt verbs are fixed: `device.info`, `page.info`, `page.title`, `page.ui`, `navigation.open`, `navigation.close`, `session.present`, `session.profile`, `session.login`, `toast.show`. Aliases map to these verbs only. Unknown methods receive 404. Account/profile reads expose this source's public account only. Navigation mappings resolve a declared `web.openPage` recipe inside the current checked WebView history. `session.login` closes that effect with `{loginRequested:true}`; the source returns `{status:'login_required'}` and the shared screen opens its owner's login page. Plugins cannot install Android objects or submit JavaScript for evaluation.
 

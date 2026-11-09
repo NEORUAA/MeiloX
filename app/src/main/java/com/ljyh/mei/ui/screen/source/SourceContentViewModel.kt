@@ -668,9 +668,43 @@ class SourceContentViewModel internal constructor(
         }
         mutate(ref.providerId, { _: Unit -> onReordered() }) { owner, revision -> router.reorderTracks(ref, tracks, revision, owner) }
     }
-    fun signOut(providerId: String) = mutate(providerId) { _, _ ->
-        val pluginId = pluginId(providerId) ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
-        configurePlugin(pluginId, emptyMap())
+    fun webLogin(providerId: String) {
+        if (mutableBusy.value) return
+        val requested = request.value
+        val owner = registry.provider(providerId) ?: run { mutableMessage.value = SourceErrorCode.MISSING_PROVIDER; return }
+        mutableBusy.value = true
+        viewModelScope.launch {
+            try {
+                if (registry.provider(providerId) !== owner) throw CancellationException("Source changed before login")
+                val bound = (features ?: throw SourceException(SourceErrorCode.UNSUPPORTED))
+                    .bind(providerId, "source-web-login:${java.util.UUID.randomUUID()}")
+                if (registry.provider(providerId) !== owner) throw CancellationException("Source changed while opening login")
+                bound.webLogin()
+                preferences.update { settings ->
+                    settings.copy(fallbackOrder = (settings.fallbackOrder + registry.playable().map { it.instanceId.value }).distinct())
+                }
+                if (request.value == requested && registry.provider(providerId) === owner) refresh()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (request.value == requested && registry.provider(providerId) === owner) mutableMessage.value = error.sourceCode()
+            } finally { mutableBusy.value = false }
+        }
+    }
+
+    fun signOut(providerId: String) = mutate(providerId) { owner, revision ->
+        if ("logout" in (owner as? SourceFeatureCapability)?.features?.get("login").orEmpty()) {
+            val version = owner.version
+            val bound = (features ?: throw SourceException(SourceErrorCode.UNSUPPORTED))
+                .bind(providerId, "source-logout:${java.util.UUID.randomUUID()}")
+            if (registry.provider(providerId) !== owner || owner.version != version ||
+                (owner as? AccountRevisionCapability)?.accountRevision?.first() != revision) {
+                throw CancellationException("Source changed while opening logout")
+            }
+            bound.logout()
+        } else {
+            val pluginId = pluginId(providerId) ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
+            configurePlugin(pluginId, emptyMap())
+        }
     }
 
     private fun <T> mutate(id: String, onSuccess: (T) -> Unit = {}, expectedProvider: MusicProvider? = null,

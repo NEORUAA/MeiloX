@@ -69,6 +69,22 @@ class BoundSourceFeatures internal constructor(
     fun supports(feature: String, action: String): Boolean =
         action in (owner as? SourceFeatureCapability)?.features?.get(feature).orEmpty()
 
+    suspend fun webLogin() {
+        val result = invoke("login", "webLogin", allowSessionChange = true)
+        val authenticated = result.takeIf { it.isJsonObject }?.asJsonObject?.get("authenticated")
+        if (authenticated == null || !authenticated.isJsonPrimitive ||
+            !authenticated.asJsonPrimitive.isBoolean || !authenticated.asBoolean) {
+            throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        }
+    }
+
+    suspend fun logout() {
+        val result = invoke("login", "logout", allowSessionChange = true)
+        if (!result.isJsonPrimitive || !result.asJsonPrimitive.isBoolean || !result.asBoolean) {
+            throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        }
+    }
+
     suspend fun invoke(feature: String, action: String, parameters: JsonObject = JsonObject(),
         allowSessionChange: Boolean = false): JsonElement {
         ensureCurrent()

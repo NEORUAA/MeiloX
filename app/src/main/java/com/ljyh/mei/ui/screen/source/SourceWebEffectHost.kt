@@ -7,6 +7,7 @@ import android.net.http.SslError
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
 import android.webkit.PermissionRequest
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -50,7 +52,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.webkit.ProfileStore
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import com.google.gson.JsonObject
@@ -60,8 +61,8 @@ import com.ljyh.mei.source.platform.SourceWebEffects
 import com.ljyh.mei.source.platform.SourceWebPromptBridge
 import com.ljyh.mei.source.platform.SourceWebRequest
 import com.ljyh.mei.source.platform.SourceWebTransport
-import com.ljyh.mei.source.platform.sourceWebNetworkGuard
-import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import com.ljyh.mei.source.platform.createSourceWebProfile
+import com.ljyh.mei.source.platform.clearSourceWebProfile
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import io.github.neoruaa.glasmio.core.LocalGlassColors
@@ -90,8 +91,9 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
     val coroutineScope = rememberCoroutineScope()
     val dark = LocalGlassColors.current.isDark
     val profileName = remember(page) {
-        val identity = "${page.scope.providerId}\n${page.scope.instanceId.value}\n${page.scope.accountRevision}\n${page.scope.token}"
-        "meilox-source-" + MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it) }
+        val identity = "${page.scope.providerId}\n${page.scope.instanceId.value}"
+        "meilox-source-session-" + MessageDigest.getInstance("SHA-256")
+            .digest(identity.toByteArray()).joinToString("") { "%02x".format(it) }
     }
     var title by remember(page) { mutableStateOf(page.recipe.title) }
     var webView by remember(page) { mutableStateOf<WebView?>(null) }
@@ -129,7 +131,8 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
         } else runCatching { callback?.onReceiveValue(null) }
     }
     val scrollEdgeDistance = with(LocalDensity.current) { GlasmioHeaderCollapseDefaults.EnterBreakpoint.toPx() }
-    val bottomPadding = LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime).asPaddingValues().calculateBottomPadding()
+    // This full-screen dialog owns its window and has no navigation-page player insets.
+    val bottomPadding = WindowInsets.systemBars.union(WindowInsets.ime).asPaddingValues().calculateBottomPadding()
 
     val finish: () -> Unit = {
         if (!finishing && page.isActive) {
@@ -173,31 +176,29 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
             AndroidView(
                 factory = { viewContext ->
                     WebView(viewContext).apply {
-                        val profile = ProfileStore.getInstance().getOrCreateProfile(profileName)
+                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        val profile = createSourceWebProfile(profileName)
                         WebViewCompat.setProfile(this, profileName)
                         profile.serviceWorkerController.serviceWorkerWebSettings.apply {
-                            blockNetworkLoads = true
+                            blockNetworkLoads = false
                             allowFileAccess = false
                             allowContentAccess = false
-                            cacheMode = WebSettings.LOAD_NO_CACHE
+                            cacheMode = WebSettings.LOAD_DEFAULT
                         }
-                        profile.serviceWorkerController.setServiceWorkerClient(object : android.webkit.ServiceWorkerClient() {
-                            override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse = SourceWebTransport.blocked()
-                        })
                         val network = SourceWebTransport(page, profile.cookieManager)
                         val promptScope = CoroutineScope(coroutineScope.coroutineContext + SupervisorJob(coroutineScope.coroutineContext[Job]))
                         transport = network
-                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            blockNetworkLoads = true
-                            cacheMode = WebSettings.LOAD_NO_CACHE
-                            useWideViewPort = true
-                            loadWithOverviewMode = true
+                            blockNetworkLoads = false
+                            cacheMode = WebSettings.LOAD_DEFAULT
+                            useWideViewPort = false
+                            loadWithOverviewMode = false
                             allowFileAccess = false
                             allowContentAccess = false
-                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             javaScriptCanOpenWindowsAutomatically = false
                             setSupportMultipleWindows(false)
                             setSupportZoom(true)
@@ -206,7 +207,7 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
                             mediaPlaybackRequiresUserGesture = true
                         }
                         profile.cookieManager.setAcceptCookie(true)
-                        profile.cookieManager.setAcceptThirdPartyCookies(this, false)
+                        profile.cookieManager.setAcceptThirdPartyCookies(this, true)
                         setDownloadListener { _, _, _, _, _ -> }
                         setOnTouchListener { _, event ->
                             if (event.actionMasked == MotionEvent.ACTION_UP) lastGesture = SystemClock.elapsedRealtime()
@@ -234,19 +235,12 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
                             setTitle = { title = it }, open = open, closePage = goBack,
                             hasRecentGesture = { lastGesture > 0 && SystemClock.elapsedRealtime() - lastGesture in 0..1500 })
                         bridge = prompts
-                        documentScript = WebViewCompat.addDocumentStartJavaScript(this, sourceWebNetworkGuard(page.scope.token), setOf("*"))
                         webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse =
-                                network.intercept(request) { target -> view.post { if (page.isActive) view.loadUrl(target) } }
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                if (!page.isActive) return true
-                                val value = request.url.toString()
-                                if (runCatching { page.recipe.checkedPageUrl(value) }.isSuccess) return false
-                                if (request.isForMainFrame && request.hasGesture()) promptScope.launch { open(value, true) }
-                                return true
+                                return !page.isActive
                             }
                             @Deprecated("Required for WebView implementations using the legacy callback")
-                            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = runCatching { page.recipe.checkedPageUrl(url) }.isFailure
+                            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = !page.isActive
                             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                                 pageError = false
                                 canGoBack = view.canGoBack()
@@ -306,7 +300,7 @@ private fun SourceWebPage(page: SourceWebRequest, modifier: Modifier) {
                             view.stopLoading()
                             view.webChromeClient = null
                             view.destroy()
-                            runCatching { ProfileStore.getInstance().deleteProfile(profileName) }
+                            clearSourceWebProfile(profile)
                         }
                     }
                 },
