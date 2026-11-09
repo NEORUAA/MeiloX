@@ -34,6 +34,29 @@ import org.junit.Test
 
 class PlaybackOrderTest {
     @Test
+    fun shuffleHistoryAggregatesRecentStartsWithinTheTypedSourceAndKeepsGlobalOrdering() {
+        val now = 2L * 365 * 86_400_000 + 10_000
+        fun row(id: String, at: Long, provider: String = "source", local: Boolean = false) =
+            com.ljyh.mei.data.model.room.HistoryItem(
+                com.ljyh.mei.data.model.room.Song(id, "Song", emptyList(), "Album", "", 240_000,
+                    sourceType = if (local) com.ljyh.mei.data.model.room.SourceType.LOCAL
+                        else com.ljyh.mei.data.model.room.SourceType.STREAM,
+                    providerId = provider, providerTrackId = id), 0, at)
+        val rows = listOf(row("opaque:a", now - 1), row("opaque:a", now - 5), row("opaque:b", now - 3),
+            row("opaque:a", 9_999), row("opaque:a", now + 1), row("opaque:a", now, provider = "other"),
+            row("opaque:a", now, local = true), row("outside", now))
+        val history = sourceShuffleHistory(rows, "source", now)
+        assertEquals(3, history.size())
+        // Source strategy applies its global history cap before looking up candidate IDs.
+        assertEquals("outside", history[0].asJsonObject.get("id").asString)
+        assertEquals("opaque:a", history[1].asJsonObject.get("id").asString)
+        assertEquals(2, history[1].asJsonObject.get("play_times").asInt)
+        assertEquals(now - 1, history[1].asJsonObject.get("timestamp").asLong)
+        assertEquals(0, history[1].asJsonObject.get("duration").asInt)
+        assertEquals("opaque:b", history[2].asJsonObject.get("id").asString)
+    }
+
+    @Test
     fun queueArtworkRepairKeepsTheExistingTrackMetadata() {
         val existing = MediaMetadata(1, "Queue title", "", listOf(MediaMetadata.Artist(2, "Artist")),
             120_000, MediaMetadata.Album(3, "Queue album"), trackRef = TrackRef("qq", "song"), tns = "Alias")
@@ -281,6 +304,51 @@ class PlaybackOrderTest {
             assertTrue(pending.await() is Queue.Result.Error)
             assertFalse(queue.hasNextPage())
             assertEquals(1, queue.loadedCount)
+        }
+    }
+
+    @Test
+    fun completeShuffleInputsBelongToTheCurrentQueueAndAreInvalidatedWithTheirOwner() = runBlocking {
+        for (change in listOf("account", "plugin", "release", "clear")) {
+            val provider = ContentProvider()
+            val registry = ProviderRegistry(listOf(provider))
+            val queue = SourceContentQueue(SourceRouter(registry), PlaylistRef(provider.id, "playlist"), null,
+                initialTracks = listOf(track("first")), mediaItemFactory = { null })
+            val owner = object : QueueSourceSession {
+                override val providerId = provider.id
+                override suspend fun ensureCurrent() = Unit
+                override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?): SourceShufflePage = error("Unexpected shuffle request")
+            }
+            assertNull(queue.canonicalShuffleInput())
+            val complete = listOf(track("first").ref, track("outside-page").ref)
+            queue.rememberCanonicalShuffleInput(complete, owner)
+            queue.freezePagination()
+            val cached = requireNotNull(queue.canonicalShuffleInput())
+            assertEquals(complete, cached.first)
+            assertTrue(cached.second === owner)
+            when (change) {
+                "account" -> provider.accountRevision.value = "account-b"
+                "plugin" -> registry.register(ContentProvider())
+                "release" -> queue.release()
+                else -> queue.clear()
+            }
+            if (change == "clear") assertNull(queue.canonicalShuffleInput())
+            else {
+                try {
+                    queue.canonicalShuffleInput()
+                    throw AssertionError("A retired source must not return cached complete identities")
+                } catch (error: SourceException) {
+                    assertEquals(SourceErrorCode.AUTH_EXPIRED, error.code)
+                }
+            }
+            val replacement = SourceContentQueue(SourceRouter(registry), PlaylistRef(provider.id, "playlist"), null,
+                initialTracks = listOf(track("first")), mediaItemFactory = { null })
+            assertNull(replacement.canonicalShuffleInput())
+            assertEquals(if (change == "clear") 0 else 1, queue.loadedCount)
+            assertTrue(provider.calls.isEmpty())
         }
     }
 

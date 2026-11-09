@@ -4,6 +4,7 @@ import androidx.media3.common.MediaItem
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.playback.SourceContentQueueSnapshot
+import com.ljyh.mei.playback.QueueSourceSession
 import com.ljyh.mei.source.api.AccountRevisionCapability
 import com.ljyh.mei.source.api.AlbumRef
 import com.ljyh.mei.source.api.ArtistRef
@@ -104,6 +105,8 @@ class SourceContentQueue private constructor(
     private var cloudOrdered = recoveryContext?.hasMore == false
     private var terminalFailure: Throwable? = null
     private var recoveryPending = recoveryContext != null
+    private var canonicalShuffleRefs: List<TrackRef>? = null
+    private var canonicalShuffleOwner: QueueSourceSession? = null
     private var flight: PageFlight? = null
     private val seenCursors = mutableSetOf<String>().apply { nextCursor?.let(::add) }
     private val seenPages = mutableSetOf<List<com.ljyh.mei.source.api.TrackRef>>().apply {
@@ -117,6 +120,35 @@ class SourceContentQueue private constructor(
     internal fun loadedTracks(): List<Track> = synchronized(lock) { tracks.toList() }
     internal val hasCloudOrder: Boolean get() = synchronized(lock) { cloudOrdered }
     internal val playbackPageSize: Int get() = pageSize
+
+    /** Only an explicit complete source identity response can populate this lifecycle cache. */
+    internal suspend fun canonicalShuffleInput(): Pair<List<TrackRef>, QueueSourceSession?>? {
+        if (!isSourceCurrent()) staleAccount()
+        val input = synchronized(lock) { canonicalShuffleRefs?.let { it to canonicalShuffleOwner } }
+        try {
+            input?.second?.ensureCurrent()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            synchronized(lock) { clearCanonicalShuffleInputLocked() }
+            throw error
+        }
+        return synchronized(lock) {
+            if (released || !providerMatches()) staleAccount()
+            input
+        }
+    }
+
+    internal suspend fun rememberCanonicalShuffleInput(refs: List<TrackRef>, owner: QueueSourceSession) {
+        if (refs.isEmpty() || refs.any { it.providerId != providerId } || owner.providerId != providerId) invalidPage()
+        owner.ensureCurrent()
+        if (!isSourceCurrent()) staleAccount()
+        synchronized(lock) {
+            if (released || !providerMatches()) staleAccount()
+            canonicalShuffleRefs = refs.distinct()
+            canonicalShuffleOwner = owner
+        }
+    }
 
     /** Local shuffle needs the complete collection, while sequential playback stays paged. */
     internal suspend fun loadAll(): Queue.Status {
@@ -168,7 +200,10 @@ class SourceContentQueue private constructor(
     }
 
     override fun hasNextPage(): Boolean = synchronized(lock) {
-        if (!providerMatches()) more = false
+        if (!providerMatches()) {
+            more = false
+            clearCanonicalShuffleInputLocked()
+        }
         !released && more
     }
 
@@ -436,7 +471,15 @@ class SourceContentQueue private constructor(
             else Queue.QueueState.Loaded(items, more)
     }
 
-    private fun stopPagination() = synchronized(lock) { more = false }
+    private fun stopPagination() = synchronized(lock) {
+        more = false
+        clearCanonicalShuffleInputLocked()
+    }
+
+    private fun clearCanonicalShuffleInputLocked() {
+        canonicalShuffleRefs = null
+        canonicalShuffleOwner = null
+    }
 
     /** Keep the account owner alive after the server replaces canonical paging with an order. */
     internal fun freezePagination() = synchronized(lock) {
@@ -451,6 +494,7 @@ class SourceContentQueue private constructor(
     override fun clear() = synchronized(lock) {
         generation++
         more = false
+        clearCanonicalShuffleInputLocked()
         flight?.job?.cancel()
         flight?.result?.cancel()
         flight = null
@@ -463,6 +507,7 @@ class SourceContentQueue private constructor(
         released = true
         generation++
         more = false
+        clearCanonicalShuffleInputLocked()
         flight?.job?.cancel()
         flight?.result?.cancel()
         flight = null

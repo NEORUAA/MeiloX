@@ -102,6 +102,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                     addProperty("brand", android.os.Build.BRAND)
                                     addProperty("processName", context.applicationInfo.processName ?: context.packageName)
                                     addProperty("pid", android.os.Process.myPid())
+                                    addProperty("processEpoch", processEpoch)
                                     addProperty("buildId", android.os.Build.ID)
                                 })
                             }
@@ -187,6 +188,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         const val SECURE_RANDOM_BYTES = 256
         private val execution = Mutex()
         private val connections = ScriptConnectionGate()
+        private val processEpoch = java.util.UUID.randomUUID().toString()
 
         internal fun newContext(
             manifest: PluginManifest,

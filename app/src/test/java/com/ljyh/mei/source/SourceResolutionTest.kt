@@ -210,7 +210,7 @@ class SourceResolutionTest {
         override var version = "1"
         override var status = SourceStatus.READY
         override val capabilities = setOf(SourceCapability.FEATURES)
-        override val features = mapOf("account" to setOf("login"))
+        override val features = mapOf("account" to setOf("login"), "discovery" to setOf("cloudShuffle", "officialShuffle"))
         override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow("account-A")
         val calls = mutableListOf<com.google.gson.JsonObject>()
         var committedRevision: String? = null
@@ -491,6 +491,58 @@ class SourceResolutionTest {
         release.complete(Unit)
         assertTrue(first.await().asJsonObject.get("ok").asBoolean)
         assertEquals(3, source.calls.size)
+    }
+
+    @Test fun completeShuffleHistoryHasABoundedInputBudgetWithoutExpandingOtherBoundaries() = runTest {
+        val source = EffectProvider()
+        val executor = SourceFeatureExecutor(SourceRouter(ProviderRegistry(listOf(source))))
+        val parameters = com.google.gson.JsonObject().apply {
+            add("ids", com.google.gson.JsonArray().apply { repeat(10_000) { add((2_000_000_000L + it).toString()) } })
+            add("history", com.google.gson.JsonArray().apply {
+                repeat(10_000) { index -> add(com.google.gson.JsonObject().apply {
+                    addProperty("id", (2_000_000_000L + index).toString())
+                    addProperty("play_times", index + 1)
+                    addProperty("timestamp", 1_700_000_000_000L + index)
+                    addProperty("duration", 0)
+                }) }
+            })
+        }
+        assertTrue(parameters.toString().toByteArray().size > 256 * 1024)
+        source.respond = { input ->
+            assertEquals(parameters.get("ids"), input.get("ids"))
+            assertEquals(parameters.get("history"), input.get("history"))
+            if (input.has("\$continuation")) com.google.gson.JsonPrimitive(true)
+            else effectEnvelope("source.continue")
+        }
+        assertTrue(executor.execute(source.id, "discovery", "officialShuffle", parameters).asBoolean)
+        assertEquals(2, source.calls.size)
+        try {
+            executor.execute(source.id, "account", "login", parameters)
+            fail("Other feature inputs must retain the ordinary budget")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        try {
+            executor.execute(source.id, "discovery", "officialShuffle", com.google.gson.JsonObject().apply {
+                addProperty("oversized", "i".repeat(2 * 1024 * 1024))
+            })
+            fail("Complete shuffle inputs must remain bounded")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        source.respond = { com.google.gson.JsonPrimitive("r".repeat(256 * 1024)) }
+        try {
+            executor.execute(source.id, "discovery", "officialShuffle", parameters)
+            fail("A bulk input must not enlarge source responses")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        source.respond = { effectEnvelope(state = com.google.gson.JsonPrimitive("s".repeat(64 * 1024))) }
+        try {
+            executor.execute(source.id, "discovery", "officialShuffle", parameters)
+            fail("A bulk input must not enlarge continuation state")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        source.calls.clear()
+        source.respond = { effectEnvelope("source.continue") }
+        try {
+            executor.execute(source.id, "discovery", "officialShuffle")
+            fail("Complete shuffle preparation must still stop an endless continuation chain")
+        } catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        assertEquals(9, source.calls.size)
     }
 
     @Test fun hostEffectValidationBoundsPrivilegedDispatchAndContinuationResources() = runTest {
@@ -1384,6 +1436,48 @@ class SourceResolutionTest {
         val router = SourceRouter(ProviderRegistry(listOf(a, b)))
         val refs = listOf(a.candidate.ref, b.candidate.ref, a.candidate.ref)
         assertEquals(refs, router.getTracks(refs).map { it.ref })
+    }
+
+    @Test fun routerUsesOneAdvertisedMetadataBatchAndRetainsLegacyFallbackOrder() = runTest {
+        var batchCalls = 0
+        var singleCalls = 0
+        fun metadata(ref: TrackRef) = track(ref.providerId).copy(ref = ref)
+        val batch = object : MusicProvider, CatalogCapability, BatchCatalogCapability {
+            override val id = "batch"
+            override val displayName = "Batch"
+            override val capabilities = setOf(SourceCapability.TRACK)
+            override suspend fun search(query: String, page: PageRequest) = SourcePage<Track>(emptyList())
+            override suspend fun getTrack(ref: TrackRef): Track? = error("An advertised batch must not read rows individually")
+            override suspend fun getTracks(refs: List<TrackRef>): List<Track> {
+                batchCalls++
+                return refs.distinct().asReversed().filterNot { it.trackId == "missing" }.map(::metadata)
+            }
+        }
+        val legacy = object : MusicProvider, CatalogCapability {
+            override val id = "legacy"
+            override val displayName = "Legacy"
+            override val capabilities = setOf(SourceCapability.TRACK)
+            override suspend fun search(query: String, page: PageRequest) = SourcePage<Track>(emptyList())
+            override suspend fun getTrack(ref: TrackRef): Track? {
+                singleCalls++
+                return ref.takeUnless { it.trackId == "missing" }?.let(::metadata)
+            }
+        }
+        assertTrue(batch.supportsBatchTrackRequests)
+        val router = SourceRouter(ProviderRegistry(listOf(batch, legacy)))
+        for (count in listOf(3, 8, 20)) {
+            batchCalls = 0
+            val refs = (1..count).map { TrackRef("batch", "$it") }
+            assertEquals(refs, router.getTracks(refs).map { it.ref })
+            assertEquals(1, batchCalls)
+            assertEquals(0, singleCalls)
+        }
+        batchCalls = 0
+        val refs = listOf(TrackRef("batch", "3"), TrackRef("legacy", "1"), TrackRef("batch", "1"),
+            TrackRef("batch", "3"), TrackRef("batch", "missing"), TrackRef("legacy", "missing"))
+        assertEquals(refs.filterNot { it.trackId == "missing" }, router.getTracks(refs).map { it.ref })
+        assertEquals(1, batchCalls)
+        assertEquals(2, singleCalls)
     }
 
     @Test fun manualBindingRejectsAProviderReturningAnotherTrack() = runTest {

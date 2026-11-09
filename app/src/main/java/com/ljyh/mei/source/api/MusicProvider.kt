@@ -77,4 +77,7 @@ data class PlaybackResolution(
 )
 
 /** Providers can hydrate queues in one request without losing their requested identities. */
-interface BatchCatalogCapability { suspend fun getTracks(refs: List<TrackRef>): List<Track> }
+interface BatchCatalogCapability {
+    val supportsBatchTrackRequests: Boolean get() = true
+    suspend fun getTracks(refs: List<TrackRef>): List<Track>
+}

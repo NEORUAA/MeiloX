@@ -126,6 +126,7 @@ import com.ljyh.mei.utils.rememberPreference
 import com.ljyh.mei.utils.smallImage
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -752,6 +753,24 @@ fun PlayerQueuePage(
     val initialLayoutReady = viewportSize.height > 0 && measuredHeaderHeightPx > 0 &&
         (controlsHeadingHeightPx > 0 || measuredHeaderHeightPx >= viewportSize.height)
 
+    val measuredRowIndices = remember(historyEntries, displayedEntries, inlineCurrent, showHistorySection,
+        currentEntry?.key, currentHeaderIndex, autoplayEnabled, autoplaySectionIndex, entriesSnapshot.isEmpty()) {
+        buildMap<String, Int> {
+            if (inlineCurrent) {
+                if (showHistorySection) historyEntries.forEachIndexed { index, entry -> put(entry.key, index + 2) }
+                if (currentEntry != null) put(PlayerQueueCurrentHeaderKey, currentHeaderIndex)
+            }
+            val headerSlots = if (inlineCurrent) currentHeaderIndex + 1 + (if (currentEntry != null) 1 else 0) else 0
+            val start = headerSlots + (if (entriesSnapshot.isEmpty()) 1 else 0)
+            displayedEntries.forEachIndexed { index, entry ->
+                put(entry.key, start + index + if (autoplayEnabled && index >= autoplaySectionIndex) 1 else 0)
+            }
+        }
+    }
+    fun isMeasuredQueueLayout(layout: LazyListLayoutInfo): Boolean = layout.visibleItemsInfo.all { item ->
+        measuredRowIndices[item.key.toString()]?.let { it == item.index } ?: true
+    }
+
     fun captureRows(model: List<PhoneQueueEntry>, playingKey: String?, layout: LazyListLayoutInfo): QueueRowsSnapshot {
         val tops = layout.visibleItemsInfo.associate { it.key.toString() to it.offset.toFloat() }.toMutableMap()
         layout.visibleItemsInfo.firstOrNull { it.key == "queue_upcoming_controls" }?.let {
@@ -782,8 +801,16 @@ fun PlayerQueuePage(
             // Await the real queue layout. The row overlay holds the previous visual
             // frame while the unchanged viewport measures the new queue snapshot.
             val layout = snapshotFlow { listState.layoutInfo to headerAnchor.isPending }
+                .onEach { (layout, pending) ->
+                    if (pending && layout !== motion.beforeLayout && isMeasuredQueueLayout(layout)) {
+                        headerAnchor.restore(renderedContentRevision) { measured ->
+                            captureRows(entriesSnapshot, currentEntry?.key, measured)
+                                .headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
+                        }
+                    }
+                }
                 .first { (layout, pending) ->
-                    if (layout === motion.beforeLayout || pending) return@first false
+                    if (layout === motion.beforeLayout || pending || !isMeasuredQueueLayout(layout)) return@first false
                     if (!motion.alignHeader || historyEntries.isNotEmpty()) return@first true
                     val header = layout.visibleItemsInfo.firstOrNull { it.key == PlayerQueueCurrentHeaderKey }
                     val padding = layout.visibleItemsInfo.firstOrNull { it.key == "queue_history_padding" }
@@ -976,8 +1003,17 @@ fun PlayerQueuePage(
                             pendingHeaderAlignmentKey = next?.key
                         }
                     }
-                    val changedOrder = entries.map { it.key } != nextEntries.map { it.key }
+                    val nextKeys = nextEntries.map { it.key }
+                    val changedOrder = entries.map { it.key } != nextKeys
+                    val retainedReorder = historyEmptied && !changed &&
+                        nextKeys.toHashSet().let { keys -> entries.all { it.key in keys } }
                     val layout = listState.layoutInfo
+                    val retainedHeader = if (retainedReorder && inlineCurrent && activeNow &&
+                        !isListDragged && !listState.isScrollInProgress && !automaticScrollInProgress &&
+                        !reorderState.isAnyItemDragging
+                    ) layout.visibleItemsInfo.firstOrNull {
+                        it.key == PlayerQueueCurrentHeaderKey && it.offset <= 0 && it.offset + it.size > 0
+                    } else null
                     val snapshot = captureRows(entries.toList(), previous?.key, layout)
                     val headerTop = snapshot.headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
                     val nextContentRevision = queueContentRevision + if (changed || changedOrder) 1 else 0
@@ -1003,12 +1039,14 @@ fun PlayerQueuePage(
                         (changed || historyEmptied || rowsTransition != null && changedOrder)
                     ) {
                         val before = rowsTransition?.frames(layout) ?: snapshot.rows()
-                        if (historyEmptied) {
+                        // Keep the header still when entries are only reordered or appended.
+                        // Removing history retains its existing return animation.
+                        if (historyEmptied && !retainedReorder) {
                             val rowsHeight = previousQueueIndex * rowHeightPx
                             val headingHeight = historyHeadingHeightPx.toFloat()
                             emptyHistoryPaddingPx = headingHeight + rowsHeight + historyGapPx +
                                 playerQueueHistoryPadding(viewportSize.height.toFloat(), headingHeight, rowsHeight, historyGapPx)
-                        } else if (nextQueueIndex > 0) {
+                        } else if (nextQueueIndex > 0 || historyEmptied) {
                             emptyHistoryPaddingPx = 0f
                         }
                         rowsTransition = QueueRowsTransition(
@@ -1024,6 +1062,11 @@ fun PlayerQueuePage(
                     entries.addAll(nextEntries)
                     currentIndex = player.currentMediaItemIndex
                     queueContentRevision = nextContentRevision
+                    retainedHeader?.let {
+                        // Anchor the next measure to the retained header before LazyList
+                        // preserves a song key at its new shuffled position.
+                        listState.requestScrollToItem(nextQueueIndex + 2, -it.offset)
+                    }
                 }
                 if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) repeatMode = player.repeatMode
             }
@@ -1307,9 +1350,12 @@ fun PlayerQueuePage(
                     .then(headerAnchor).onGloballyPositioned {
                     // Global placement has completed; a raw correction remeasures before drawing
                     // and preserves the drag/fling owner instead of requesting a new scroll.
-                    headerAnchor.restore(renderedContentRevision) { layout ->
-                        captureRows(entriesSnapshot, currentEntry?.key, layout)
-                            .headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
+                    // Metadata can remeasure the old mapping after the new model is published.
+                    if (isMeasuredQueueLayout(listState.layoutInfo)) {
+                        headerAnchor.restore(renderedContentRevision) { layout ->
+                            captureRows(entriesSnapshot, currentEntry?.key, layout)
+                                .headerTop(inlineHeaderHeightPx, controlsHeadingHeightPx.toFloat())
+                        }
                     }
                 },
             ) {

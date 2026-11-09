@@ -526,6 +526,18 @@ class ScriptPluginPolicyTest {
         assertFalse(PluginManifest.parse(minimal.replace("\"apiVersion\":1", "\"apiVersion\":3")).supported)
     }
 
+    @Test fun batchCatalogIsAnOptionalV2SupplementToSingleTrackLookup() {
+        val single = minimal.replace("\"catalog.search\"", "\"catalog.track\"")
+        val batch = single.replace("\"apiVersion\":1", "\"apiVersion\":2")
+            .replace("\"catalog.track\"", "\"catalog.track\",\"catalog.tracks\"")
+        assertFalse("catalog.tracks" in PluginManifest.parse(single).capabilities)
+        val manifest = PluginManifest.parse(batch)
+        assertTrue("catalog.tracks" in manifest.capabilities)
+        assertTrue(SourceCapability.TRACK in manifest.sourceCapabilities)
+        rejects { PluginManifest.parse(batch.replace("\"apiVersion\":2", "\"apiVersion\":1")) }
+        rejects { PluginManifest.parse(batch.replace("\"catalog.track\",", "")) }
+    }
+
     @Test fun sharedFeaturesAndNativeCodecsRequireExplicitIndependentPermissions() {
         val value = """{"id":"example.source","name":"Example","author":"Author","version":"2","apiVersion":2,
             "capabilities":["feature.invoke","playback.qualities"],"features":{"messages":["conversations","send"]},

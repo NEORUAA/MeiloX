@@ -58,7 +58,10 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
         coreOperation: String? = null,
     ): JsonElement {
         if (parameters.has(CONTINUATION_KEY) || scopeId.length > 256) invalid()
-        val original = boundedCopy(parameters, MAX_INPUT_BYTES).asJsonObject
+        // Complete shuffle IDs and playback history are inputs, not a larger response/effect allowance.
+        val completeShuffle = coreOperation == null && feature == "discovery" && action == "officialShuffle"
+        val inputLimit = if (completeShuffle) MAX_SHUFFLE_INPUT_BYTES else MAX_INPUT_BYTES
+        val original = boundedCopy(parameters, inputLimit).asJsonObject
         val executionContext = currentCoroutineContext()
         executionContext.ensureActive()
         router.registry.awaitInitialized()
@@ -196,7 +199,7 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
                         addProperty("token", token)
                     })
                 }
-                boundedCopy(input, MAX_INPUT_BYTES)
+                boundedCopy(input, inputLimit)
                 ensureOwner()
             }
         } finally {
@@ -288,5 +291,6 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
         private const val MAX_SPEC_BYTES = 64 * 1024
         private const val MAX_RESULT_BYTES = 128 * 1024
         private const val MAX_INPUT_BYTES = 256 * 1024
+        private const val MAX_SHUFFLE_INPUT_BYTES = 2 * 1024 * 1024
     }
 }

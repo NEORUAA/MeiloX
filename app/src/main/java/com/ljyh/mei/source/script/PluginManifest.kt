@@ -54,6 +54,7 @@ data class PluginManifest(
         val CAPABILITIES = mapOf(
             "catalog.search" to SourceCapability.SEARCH,
             "catalog.track" to SourceCapability.TRACK,
+            "catalog.tracks" to SourceCapability.TRACK,
             "playback.resolve" to SourceCapability.PLAYBACK,
             "lyrics.get" to SourceCapability.LYRICS,
             "feed.home" to SourceCapability.FEED,
@@ -116,6 +117,7 @@ data class PluginManifest(
                 require(manifest.description == null || manifest.description.length <= 2000)
                 require(manifest.apiVersion > 0 && manifest.entry == "index.js")
                 require(manifest.capabilities.isNotEmpty() && manifest.capabilities.all(CAPABILITIES::containsKey))
+                require("catalog.tracks" !in manifest.capabilities || "catalog.track" in manifest.capabilities)
                 if (manifest.apiVersion == 1) {
                     require(manifest.capabilities.all { it in setOf("catalog.search", "catalog.track", "playback.resolve", "lyrics.get") })
                     require(manifest.searchTypes == setOf("track") && manifest.collectionTypes.isEmpty())

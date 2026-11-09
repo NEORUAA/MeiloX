@@ -528,6 +528,717 @@ class PlaybackQueueIntegrationTest {
     }
 
     @Test
+    fun consecutiveInitialCloudQueuesRequestAndCommitWhileReplacingAnAlreadyShuffledQueue() {
+        for (library in listOf(false, true)) for (randomStart in listOf(false, true)) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val requests = CopyOnWriteArrayList<String>()
+            val responses = List(2) { CompletableDeferred<SourceShufflePage>() }
+            val session = object : QueueSourceSession {
+                override val providerId = provider.id
+                override suspend fun ensureCurrent() = Unit
+                override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+                override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?) =
+                    (0 until 90).map { provider.track(it).ref }
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?): SourceShufflePage {
+                    val index = requests.size
+                    requests += songId
+                    return responses[index].await()
+                }
+            }
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42)).use { fixture ->
+                onMain { fixture.manager.setCloudShuffleEnabled(true) }
+                for (iteration in 0 until 2) {
+                    val initial = (0 until 30).map(provider::track)
+                    val queue = if (library) SourceContentQueue.forLibrary(router, provider.id,
+                        initialTracks = initial, startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                    else SourceContentQueue(router, PlaylistRef(provider.id, "same:playlist"), "Playlist", initial,
+                        startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                    if (iteration > 0) onMain { assertTrue(fixture.player.shuffleModeEnabled) }
+                    onMain {
+                        fixture.manager.playQueue(queue, startInShuffleMode = true,
+                            randomStart = randomStart, playWhenReady = false)
+                    }
+                    await("repeat initial cloud request ${iteration + 1}, library=$library randomStart=$randomStart") {
+                        requests.size == iteration + 1
+                    }
+                    val current = onMain {
+                        assertTrue(fixture.manager.shuffleModeIntent.value)
+                        assertTrue(fixture.player.shuffleModeEnabled)
+                        assertEquals(90, fixture.player.mediaItemCount)
+                        assertFalse(fixture.player.playWhenReady)
+                        assertTrue(fixture.manager.playlistSource != null)
+                        fixture.player.seekTo(fixture.player.currentMediaItemIndex, 350L)
+                        requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                    }
+                    val serverOrder = (0 until 90).map { provider.track(it).ref }.let {
+                        if (iteration == 0) it.reversed() else it.drop(30) + it.take(30)
+                    }
+                    responses[iteration].complete(SourceShufflePage(serverOrder, initial, emptySet()))
+                    val playing = TrackRef(provider.id, requests[iteration])
+                    val expectedOrder = listOf(playing) + serverOrder.filterNot { it == playing }
+                    await("repeat initial cloud commit ${iteration + 1}, library=$library randomStart=$randomStart") {
+                        fixture.player.shuffleModeEnabled && fixture.player.mediaItemCount == 90 &&
+                            fixture.player.playbackOrderIndices().map { TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId) } == expectedOrder
+                    }
+                    onMain {
+                        assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                        assertEquals(listOf(playing) + serverOrder.filterNot { it == playing },
+                            fixture.player.playbackOrderIndices().map {
+                                requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId))
+                            })
+                    }
+                }
+                assertEquals(2, requests.size)
+                assertTrue(provider.requests.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun initialCloudRandomStartUsesTheFullIdentitySetWhileClickedTracksKeepTheirSelection() {
+        for (library in listOf(false, true)) for (randomStart in listOf(false, true)) for (fastIds in listOf(false, true)) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val requested = CompletableDeferred<String>()
+            val response = CompletableDeferred<SourceShufflePage>()
+            val identityRequests = CopyOnWriteArrayList<Pair<String, LibraryCollection?>>()
+            val session = object : QueueSourceSession {
+                override val providerId = provider.id
+                override suspend fun ensureCurrent() = Unit
+                override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+                override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?): List<TrackRef>? {
+                    identityRequests += playlistId to collection
+                    return if (fastIds) (0 until 90).map { provider.track(it).ref } else null
+                }
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?): SourceShufflePage {
+                    requested.complete(songId)
+                    return response.await()
+                }
+            }
+            val seed = (0..100).first { Random(it).nextInt(90) >= 30 }
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(seed)).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = if (library) SourceContentQueue.forLibrary(router, provider.id,
+                    initialTracks = initial, startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                else SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(true)
+                    fixture.manager.playQueue(queue, startInShuffleMode = true, randomStart = randomStart, playWhenReady = false)
+                }
+                val playingId = runBlocking { withTimeout(5_000) { requested.await() } }
+                val current = onMain {
+                    assertTrue(fixture.manager.shuffleModeIntent.value)
+                    assertEquals(fastIds, fixture.player.shuffleModeEnabled)
+                    assertFalse(fixture.player.playWhenReady)
+                    assertEquals(if (fastIds) 90 else 30, fixture.player.mediaItemCount)
+                    if (randomStart && fastIds) assertTrue(fixture.player.currentMediaItemIndex >= 30)
+                    else if (randomStart) assertTrue(fixture.player.currentMediaItemIndex < 30)
+                    else assertEquals("track-4", playingId)
+                    fixture.player.seekTo(fixture.player.currentMediaItemIndex, 350L)
+                    requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                }
+                assertEquals(if (fastIds) 1 else 2, identityRequests.size)
+                assertTrue(identityRequests.all { it == if (library) "" to LibraryCollection.LIKED_TRACKS
+                    else "opaque:playlist" to null })
+                assertTrue(provider.requests.isEmpty())
+                val serverOrder = (0 until 90).reversed().map { provider.track(it).ref }
+                response.complete(SourceShufflePage(serverOrder, initial, emptySet()))
+                val expectedOrder = listOf(TrackRef(provider.id, playingId)) + serverOrder.filterNot { it.trackId == playingId }
+                await("full initial server order") {
+                    fixture.player.mediaItemCount == 90 && fixture.player.shuffleModeEnabled &&
+                        fixture.player.playbackOrderIndices().map { TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId) } == expectedOrder
+                }
+                onMain {
+                    val playing = TrackRef(provider.id, playingId)
+                    assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                    assertEquals(350L, fixture.player.currentPosition)
+                    assertFalse(fixture.player.playWhenReady)
+                    assertEquals(listOf(playing) + serverOrder.filterNot { it == playing },
+                        fixture.player.playbackOrderIndices().map {
+                            requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId))
+                        })
+                }
+                assertTrue(provider.requests.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun completeSourceIdentitiesKeepRepeatedShuffleImmediateAndTheServerOrderAuthoritative() {
+        for (library in listOf(false, true)) for (learnFromResult in listOf(false, true)) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val canonical = (0 until 90).map { provider.track(it).ref }
+            val responses = List(3) { CompletableDeferred<SourceShufflePage>() }
+            val requests = CopyOnWriteArrayList<List<TrackRef>?>()
+            var identityRequests = 0
+            var opened = 0
+            val session = object : QueueSourceSession {
+                override val providerId = provider.id
+                override suspend fun ensureCurrent() = Unit
+                override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+                override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?): List<TrackRef>? {
+                    identityRequests++
+                    return if (learnFromResult) null else canonical
+                }
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?): SourceShufflePage = error("Expected the complete identity overload")
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?, canonicalIds: List<TrackRef>?): SourceShufflePage {
+                    val index = requests.size
+                    requests += canonicalIds
+                    return responses[index].await()
+                }
+            }
+            Fixture(sourceRouter = router, queueSession = { opened++; session }, shuffleRandom = Random(42)).use { fixture ->
+                fun order() = fixture.player.playbackOrderIndices().map {
+                    requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId))
+                }
+                val initial = (0 until 30).map(provider::track)
+                val queue = if (library) SourceContentQueue.forLibrary(router, provider.id, initialTracks = initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                else SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(true)
+                    fixture.manager.playQueue(queue, playWhenReady = false)
+                }
+                await("sequential source prefix") { fixture.player.mediaItemCount == 30 }
+                val current = onMain {
+                    fixture.player.seekTo(4, 350L)
+                    requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                }
+                val firstOrder = listOf(canonical[4]) + canonical.reversed().filterNot { it == canonical[4] }
+                onMain { fixture.manager.setShuffleModeEnabled(true) }
+                await("first source shuffle request") { requests.size == 1 }
+                if (!learnFromResult) onMain {
+                    assertTrue(fixture.player.shuffleModeEnabled)
+                    assertEquals(canonical.toSet(), order().toSet())
+                    assertFalse(order() == listOf(canonical[4]) + canonical.filterNot { it == canonical[4] })
+                }
+                responses[0].complete(SourceShufflePage(firstOrder, initial, emptySet(),
+                    canonicalOrder = if (learnFromResult) canonical else null))
+                await("first authoritative source order") { order() == firstOrder }
+                val identitiesAfterLearning = identityRequests
+                val ownersAfterLearning = opened
+                for (repeat in 1..2) {
+                    val prefix = onMain {
+                        if (repeat == 1) fixture.manager.setShuffleModeEnabled(false)
+                        else {
+                            fixture.player.seekToDefaultPosition(fixture.player.playbackOrderIndices()[1])
+                            fixture.player.seekTo(fixture.player.currentMediaItemIndex, 350L)
+                            fixture.manager.setCloudShuffleEnabled(false)
+                        }
+                        if (repeat == 1) listOf(requireNotNull(fixture.player.currentMediaItem?.let { TrackRefCodec.decode(it.mediaId) }))
+                        else order().take(2)
+                    }
+                    if (repeat == 1) await("shuffle disabled") { !fixture.player.shuffleModeEnabled }
+                    else await("complete cached local order") { fixture.player.shuffleModeEnabled }
+                    val playingEntry = onMain {
+                        if (repeat == 1) fixture.manager.setShuffleModeEnabled(true)
+                        else fixture.manager.setCloudShuffleEnabled(true)
+                        requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                    }
+                    await("cached complete shuffle request $repeat") { requests.size == repeat + 1 }
+                    onMain {
+                        assertTrue(fixture.player.shuffleModeEnabled)
+                        assertEquals(canonical.toSet(), order().toSet())
+                        assertEquals(prefix, order().take(prefix.size))
+                        assertEquals(canonical, requests[repeat])
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                        if (repeat == 1) assertEquals(current, playingEntry)
+                    }
+                    assertEquals(identitiesAfterLearning, identityRequests)
+                    assertEquals(ownersAfterLearning, opened)
+                    val sourceOrder = if (repeat == 1) canonical.drop(30) + canonical.take(30) else canonical.reversed()
+                    val expected = prefix + sourceOrder.filterNot { it in prefix }
+                    responses[repeat].complete(SourceShufflePage(sourceOrder, initial, emptySet()))
+                    await("source order replaces the immediate local order $repeat") { order() == expected }
+                    onMain {
+                        assertEquals(playingEntry, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                    }
+                }
+                assertTrue(provider.requests.isEmpty())
+                provider.accountRevision.value = "account-b"
+                await("cached source owner invalidation") { fixture.manager.playlistSource == null }
+                assertFalse(runBlocking { queue.isSourceCurrent() })
+            }
+        }
+    }
+
+    @Test
+    fun cancelledIdentityPreparationCannotOverwriteANewerCompleteServerOrder() {
+        val provider = ShuffleProvider()
+        val router = SourceRouter(ProviderRegistry(listOf(provider)))
+        val canonical = (0 until 90).map { provider.track(it).ref }
+        val oldIdentityResponse = CompletableDeferred<Unit>()
+        val oldIdentityReturned = CompletableDeferred<Unit>()
+        val requested = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<SourceShufflePage>()
+        var identityRequests = 0
+        val session = object : QueueSourceSession {
+            override val providerId = provider.id
+            override suspend fun ensureCurrent() = Unit
+            override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+            override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+            override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?): List<TrackRef> {
+                if (++identityRequests == 1) withContext(NonCancellable) {
+                    oldIdentityResponse.await()
+                    oldIdentityReturned.complete(Unit)
+                }
+                return canonical
+            }
+            override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                collection: LibraryCollection?): SourceShufflePage {
+                requested.complete(Unit)
+                return response.await()
+            }
+        }
+        Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42)).use { fixture ->
+            val initial = (0 until 30).map(provider::track)
+            val queue = SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+            onMain {
+                fixture.manager.setCloudShuffleEnabled(false)
+                fixture.manager.playQueue(queue, playWhenReady = false)
+            }
+            await("sequential source before cancelled preparation") { fixture.player.mediaItemCount == 30 }
+            val current = onMain {
+                fixture.player.seekTo(4, 350L)
+                fixture.manager.setShuffleModeEnabled(true)
+                requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+            }
+            await("old identity request") { identityRequests == 1 }
+            onMain { fixture.manager.setCloudShuffleEnabled(true) }
+            runBlocking { withTimeout(5_000) { requested.await() } }
+            onMain { assertTrue(fixture.player.shuffleModeEnabled); assertEquals(90, fixture.player.mediaItemCount) }
+            val sourceOrder = canonical.reversed()
+            val expected = listOf(canonical[4]) + sourceOrder.filterNot { it == canonical[4] }
+            response.complete(SourceShufflePage(sourceOrder, initial, emptySet()))
+            await("new server order") { fixture.player.playbackOrderIndices().map {
+                TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId)
+            } == expected }
+            oldIdentityResponse.complete(Unit)
+            runBlocking { withTimeout(5_000) { oldIdentityReturned.await() }; delay(50) }
+            onMain {
+                assertEquals(expected, fixture.player.playbackOrderIndices().map {
+                    TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId)
+                })
+                assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                assertEquals(350L, fixture.player.currentPosition)
+                assertFalse(fixture.player.playWhenReady)
+            }
+            assertEquals(2, identityRequests)
+            assertTrue(provider.requests.isEmpty())
+        }
+    }
+
+    @Test
+    fun sourceShufflePublishesTheFrozenFinalWindowWithItsMetadataAndReusesReadyTracks() {
+        for (readyTracks in listOf(false, true)) for (extras in listOf(false, true)) {
+            val provider = ShuffleProvider(metadataArtwork = true)
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val canonical = (0 until 90).map { provider.track(it).ref }
+            val session = PendingCloudShuffle(provider.id, canonicalIds = canonical)
+            val random = Random(42)
+            // Initial full local shuffle consumes the same random stream before pending extras.
+            canonical.indices.filterNot { it == 4 }.shuffled(random)
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42), batchTracks = true).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(true)
+                    fixture.manager.playQueue(queue, startInShuffleMode = true, playWhenReady = false)
+                }
+                runBlocking { withTimeout(5_000) { session.requested.await() } }
+                await("initial full local metadata window") { fixture.metadataWindowReady() }
+                val before = onMain {
+                    fixture.player.seekTo(4, 350L)
+                    fixture.items() to fixture.sourceOrder()
+                }
+                val current = requireNotNull(before.first[4].queueEntryId)
+                val unavailable = if (extras) setOf(canonical[7]) else emptySet()
+                val ready = before.first.filterNot(::isPlaceholderMediaItem).mapNotNull { TrackRefCodec.decode(it.mediaId) }.toSet()
+                val unresolved = canonical.filterNot { it in ready || it in unavailable }
+                val sourceOrder = if (extras) unresolved.take(5) else unresolved + canonical.filterNot { it in unresolved }
+                val pending = sourceOrder.filterNot { it == canonical[4] || it in unavailable }.toMutableList()
+                canonical.filterNot { it == canonical[4] || it in unavailable || it in pending }.shuffled(random).forEach {
+                    pending.add(random.nextInt(pending.size + 1), it)
+                }
+                val expected = listOf(canonical[4]) + pending
+                val missing = expected.take(13).filterNot { it in ready }
+                assertTrue(missing.isNotEmpty())
+                val requested = CompletableDeferred<List<TrackRef>>()
+                val metadata = CompletableDeferred<Unit>()
+                val batchesBefore = provider.catalogBatches.size
+                provider.beforeTracks = { refs ->
+                    requested.complete(refs)
+                    if (!readyTracks) metadata.await()
+                }
+                try {
+                    session.response.complete(SourceShufflePage(sourceOrder,
+                        if (readyTracks) (0 until 90).map(provider::track) else emptyList(), unavailable))
+                    if (!readyTracks) {
+                        val actualRequest = runBlocking { withTimeout(5_000) { requested.await() } }
+                        assertEquals(missing, actualRequest)
+                        onMain {
+                            assertEquals(before.second, fixture.sourceOrder())
+                            assertTrue(fixture.player.shuffleModeEnabled)
+                            assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                            assertEquals(350L, fixture.player.currentPosition)
+                            assertFalse(fixture.player.playWhenReady)
+                        }
+                        metadata.complete(Unit)
+                    }
+                    await("final staged source order") { fixture.sourceOrder() == expected }
+                    onMain {
+                        assertTrue(fixture.player.playbackOrderIndices().take(13).all {
+                            !isPlaceholderMediaItem(fixture.player.getMediaItemAt(it))
+                        })
+                        assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                        val retained = before.first.filterNot { TrackRefCodec.decode(it.mediaId) in unavailable }
+                            .associate { it.mediaId to it.queueEntryId }
+                        assertEquals(retained, fixture.items().associate { it.mediaId to it.queueEntryId })
+                    }
+                    if (readyTracks) assertEquals(batchesBefore, provider.catalogBatches.size)
+                    assertTrue(provider.requests.isEmpty())
+                } finally {
+                    metadata.complete(Unit)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun stagedSourceMetadataRebasesCurrentPlaybackAndRejectsStaleCommits() {
+        for (change in listOf("advance", "cancel", "account", "network", "auth")) {
+            val provider = ShuffleProvider(metadataArtwork = true)
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val canonical = (0 until 90).map { provider.track(it).ref }
+            val session = PendingCloudShuffle(provider.id, canonicalIds = canonical)
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42), batchTracks = true).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(true)
+                    fixture.manager.playQueue(queue, startInShuffleMode = true, playWhenReady = false)
+                }
+                runBlocking { withTimeout(5_000) { session.requested.await() } }
+                await("initial metadata before staged $change") { fixture.metadataWindowReady() }
+                val before = onMain {
+                    fixture.player.seekTo(4, 350L)
+                    fixture.items() to fixture.sourceOrder()
+                }
+                val ready = before.first.filterNot(::isPlaceholderMediaItem).mapNotNull { TrackRefCodec.decode(it.mediaId) }.toSet()
+                val sourceOrder = canonical.filterNot { it in ready } + canonical.filter { it in ready }
+                val requested = CompletableDeferred<Unit>()
+                val metadata = CompletableDeferred<Unit>()
+                val returned = CompletableDeferred<Unit>()
+                provider.beforeTracks = {
+                    requested.complete(Unit)
+                    withContext(NonCancellable) { metadata.await() }
+                    returned.complete(Unit)
+                    when (change) {
+                        "network" -> throw SourceException(SourceErrorCode.NETWORK)
+                        "auth" -> throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+                    }
+                }
+                try {
+                    session.response.complete(SourceShufflePage(sourceOrder, emptyList(), emptySet()))
+                    runBlocking { withTimeout(5_000) { requested.await() } }
+                    onMain { assertEquals(before.second, fixture.sourceOrder()) }
+                    val current = onMain {
+                        when (change) {
+                            "advance" -> repeat(3) { fixture.player.seekToNextMediaItem() }
+                            "cancel" -> fixture.manager.setShuffleModeEnabled(false)
+                            "account" -> provider.accountRevision.value = "account-b"
+                        }
+                        fixture.player.seekTo(fixture.player.currentMediaItemIndex, 350L)
+                        requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                    }
+                    if (change == "cancel") await("cancelled metadata staging") { !fixture.player.shuffleModeEnabled }
+                    if (change == "account") await("invalid metadata staging owner") { fixture.manager.playlistSource == null }
+                    metadata.complete(Unit)
+                    runBlocking { withTimeout(5_000) { returned.await() } }
+                    if (change == "advance" || change == "network") {
+                        val prefix = before.second.take(if (change == "advance") 4 else 1)
+                        val expected = prefix + sourceOrder.filterNot { it in prefix }
+                        await("rebased or network fallback final order") { fixture.sourceOrder() == expected }
+                        if (change == "advance") onMain {
+                            val order = fixture.player.playbackOrderIndices()
+                            val position = order.indexOf(fixture.player.currentMediaItemIndex)
+                            assertTrue(order.drop(position).take(13).all { !isPlaceholderMediaItem(fixture.player.getMediaItemAt(it)) })
+                        }
+                    } else {
+                        runBlocking { delay(50) }
+                        onMain {
+                            assertEquals(before.first.map { it.mediaId }, fixture.items().map { it.mediaId })
+                            assertEquals(before.second, fixture.player.playbackOrderIndices(true).map {
+                                requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId))
+                            })
+                        }
+                    }
+                    onMain {
+                        assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                    }
+                    assertTrue(provider.requests.isEmpty())
+                } finally {
+                    metadata.complete(Unit)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun localBatchShuffleKeepsTheOldOrderUntilItsGlobalPreviewIsReadyAndIsolatesMissingRows() {
+        for (change in listOf("local", "cloud", "partial", "cancel", "account", "network", "auth", "legacy")) {
+            val provider = ShuffleProvider(metadataArtwork = true)
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val canonical = (0 until 90).map { provider.track(it).ref }
+            val session = PendingCloudShuffle(provider.id, canonicalIds = canonical)
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42),
+                batchTracks = change != "legacy").use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(change == "cloud")
+                    fixture.manager.playQueue(queue, playWhenReady = false)
+                }
+                await("sequential source before local batch $change") { fixture.player.mediaItemCount == 30 }
+                val before = onMain {
+                    fixture.player.seekTo(4, 350L)
+                    fixture.items() to fixture.sourceOrder()
+                }
+                val uniform = listOf(canonical[4]) + canonical.filterNot { it == canonical[4] }.shuffled(Random(42))
+                val requested = CompletableDeferred<List<TrackRef>>()
+                val metadata = CompletableDeferred<Unit>()
+                val returned = CompletableDeferred<Unit>()
+                provider.beforeTracks = { refs ->
+                    requested.complete(refs)
+                    withContext(NonCancellable) { metadata.await() }
+                    returned.complete(Unit)
+                    when (change) {
+                        "network" -> throw SourceException(SourceErrorCode.NETWORK)
+                        "auth" -> throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+                    }
+                }
+                try {
+                    onMain { fixture.manager.setShuffleModeEnabled(true) }
+                    val batch = runBlocking { withTimeout(5_000) { requested.await() } }
+                    if (change == "legacy") onMain {
+                        assertTrue(fixture.player.shuffleModeEnabled)
+                        assertEquals(uniform, fixture.sourceOrder())
+                    } else onMain {
+                        assertEquals(before.second, fixture.sourceOrder())
+                        assertEquals(30, fixture.player.mediaItemCount)
+                        assertFalse(fixture.player.shuffleModeEnabled)
+                        assertFalse(session.requested.isCompleted)
+                        assertEquals(uniform.take(13).filterNot { it in initial.map(Track::ref) }, batch)
+                    }
+                    if (change == "partial") provider.omittedTracks = setOf(batch.first())
+                    when (change) {
+                        "cancel" -> onMain { fixture.manager.setShuffleModeEnabled(false) }
+                        "account" -> provider.accountRevision.value = "account-b"
+                    }
+                    if (change == "cancel") await("cancelled local batch intent") { !fixture.manager.shuffleModeIntent.value }
+                    if (change == "account") await("invalid local batch owner") { fixture.manager.playlistSource == null }
+                    metadata.complete(Unit)
+                    runBlocking { withTimeout(5_000) { returned.await() } }
+                    if (change in listOf("local", "cloud", "partial", "legacy")) {
+                        val expected = uniform.filterNot { it in provider.omittedTracks } + uniform.filter { it in provider.omittedTracks }
+                        await("ready local global permutation $change") { fixture.player.shuffleModeEnabled && fixture.sourceOrder() == expected }
+                        await("ready local first screen $change") { fixture.player.playbackOrderIndices().take(13).all {
+                            !isPlaceholderMediaItem(fixture.player.getMediaItemAt(it))
+                        } }
+                        onMain {
+                            assertEquals(canonical.toSet(), fixture.sourceOrder().toSet())
+                            assertEquals(canonical, fixture.items().map { TrackRefCodec.decode(it.mediaId) })
+                            assertEquals(before.first[4].queueEntryId, fixture.player.currentMediaItem?.queueEntryId)
+                            assertEquals(350L, fixture.player.currentPosition)
+                            assertFalse(fixture.player.playWhenReady)
+                        }
+                        if (change == "cloud") runBlocking { withTimeout(5_000) { session.requested.await() } }
+                    } else {
+                        runBlocking { delay(50) }
+                        onMain {
+                            assertEquals(before.first.map { it.queueEntryId }, fixture.items().map { it.queueEntryId })
+                            assertEquals(before.second, fixture.sourceOrder())
+                            assertEquals(350L, fixture.player.currentPosition)
+                            assertFalse(fixture.player.playWhenReady)
+                        }
+                    }
+                    assertTrue(provider.requests.isEmpty())
+                } finally {
+                    metadata.complete(Unit)
+                    session.response.complete(SourceShufflePage(emptyList(), emptyList(), emptySet()))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun initialBatchRandomUsesOneFrozenGlobalPermutationBeforePreparingTheSelectedSong() {
+        for (change in listOf("complete", "partial", "randomMissing", "boundedMissing", "explicitMissing", "cancel", "account", "network", "auth", "legacy")) {
+            val provider = ShuffleProvider(metadataArtwork = true)
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val canonical = (0 until 90).map { provider.track(it).ref }
+            val session = PendingCloudShuffle(provider.id, canonicalIds = canonical)
+            val randomStart = change != "explicitMissing"
+            val seed = (0..100).first { Random(it).nextInt(90) >= 30 }
+            val random = Random(seed)
+            val selected = if (randomStart) random.nextInt(90) else 4
+            val uniform = listOf(selected) + canonical.indices.filterNot { it == selected }.shuffled(random)
+            val requested = CompletableDeferred<List<TrackRef>>()
+            val metadata = CompletableDeferred<Unit>()
+            val returned = CompletableDeferred<Unit>()
+            provider.beforeTracks = { refs ->
+                requested.complete(refs)
+                withContext(NonCancellable) { metadata.await() }
+                returned.complete(Unit)
+                when (change) {
+                    "network" -> throw SourceException(SourceErrorCode.NETWORK)
+                    "auth" -> throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+                }
+            }
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(seed),
+                batchTracks = change != "legacy").use { fixture ->
+                val before = onMain {
+                    fixture.player.seekTo(0, 350L)
+                    fixture.player.playWhenReady = false
+                    fixture.items() to fixture.sourceCreations.size
+                }
+                val farCached = canonical.take(30).first { canonical.indexOf(it) !in uniform.take(30) }
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist",
+                    (0 until 30).map(provider::track), startIndex = 4, nextCursor = "30", mediaItemFactory = {
+                        if (change == "boundedMissing" && it.ref == farCached) fixture.sourceItem(it) else null
+                    })
+                try {
+                    onMain {
+                        fixture.manager.setCloudShuffleEnabled(false)
+                        fixture.manager.playQueue(queue, startInShuffleMode = true, randomStart = randomStart, playWhenReady = false)
+                    }
+                    val batch = runBlocking { withTimeout(5_000) { requested.await() } }
+                    assertEquals(if (change == "legacy") listOf(canonical[selected]) else uniform.take(13).map(canonical::get), batch)
+                    onMain {
+                        assertEquals(before.first.map { it.queueEntryId }, fixture.items().map { it.queueEntryId })
+                        assertEquals(before.second, fixture.sourceCreations.size)
+                    }
+                    when (change) {
+                        "partial" -> provider.omittedTracks = setOf(batch[1])
+                        "randomMissing", "explicitMissing" -> provider.omittedTracks = setOf(batch.first())
+                        "boundedMissing" -> provider.omittedTracks = canonical.toSet()
+                        "cancel" -> onMain { fixture.manager.setShuffleModeEnabled(false) }
+                        "account" -> provider.accountRevision.value = "account-b"
+                    }
+                    if (change == "cancel") await("cancelled initial preview") { !fixture.manager.shuffleModeIntent.value }
+                    metadata.complete(Unit)
+                    runBlocking { withTimeout(5_000) { returned.await() } }
+                    if (change in listOf("complete", "partial", "randomMissing", "legacy")) {
+                        val original = uniform.map(canonical::get)
+                        val expected = original.filterNot { it in provider.omittedTracks } + original.filter { it in provider.omittedTracks }
+                        await("committed frozen initial random $change") { fixture.player.mediaItemCount == 90 && fixture.sourceOrder() == expected }
+                        onMain {
+                            assertEquals(expected.first(), TrackRefCodec.decode(requireNotNull(fixture.player.currentMediaItem).mediaId))
+                            assertEquals(canonical.toSet(), fixture.sourceOrder().toSet())
+                            if (change != "legacy") assertTrue(fixture.player.playbackOrderIndices().take(13).all {
+                                !isPlaceholderMediaItem(fixture.player.getMediaItemAt(it))
+                            })
+                            assertFalse(fixture.player.playWhenReady)
+                            assertEquals(0L, fixture.player.currentPosition)
+                        }
+                    } else {
+                        runBlocking { delay(50) }
+                        onMain {
+                            assertEquals(before.first.map { it.queueEntryId }, fixture.items().map { it.queueEntryId })
+                            assertEquals(before.second, fixture.sourceCreations.size)
+                            assertEquals(350L, fixture.player.currentPosition)
+                            assertFalse(fixture.player.playWhenReady)
+                        }
+                        if (change == "boundedMissing") {
+                            assertEquals(2, provider.catalogBatches.size)
+                            assertTrue(provider.catalogBatches.sumOf { it.size } <= 30)
+                        }
+                    }
+                    assertTrue(provider.requests.isEmpty())
+                } finally {
+                    metadata.complete(Unit)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun localShuffleUsesCompleteSourceIdentitiesWithoutFetchingEveryMetadataPage() {
+        for (library in listOf(false, true)) for (initialShuffle in listOf(false, true)) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val identityRequests = CopyOnWriteArrayList<Pair<String, LibraryCollection?>>()
+            val session = object : QueueSourceSession {
+                override val providerId = provider.id
+                override suspend fun ensureCurrent() = Unit
+                override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+                override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+                override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+                    collection: LibraryCollection?): SourceShufflePage = error("Local shuffle must not request an algorithm")
+                override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?): List<TrackRef> {
+                    identityRequests += playlistId to collection
+                    return (0 until 90).map { provider.track(it).ref }
+                }
+            }
+            val seed = (0..100).first { Random(it).nextInt(90) >= 30 }
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(seed)).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = if (library) SourceContentQueue.forLibrary(router, provider.id,
+                    initialTracks = initial, startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                else SourceContentQueue(router, PlaylistRef(provider.id, "opaque:playlist"), "Playlist", initial,
+                    startIndex = 4, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(false)
+                    fixture.manager.playQueue(queue, startInShuffleMode = initialShuffle,
+                        randomStart = initialShuffle, playWhenReady = false)
+                }
+                if (!initialShuffle) {
+                    await("partial identity source") { fixture.player.mediaItemCount == 30 }
+                    onMain { fixture.player.seekTo(4, 350L); fixture.manager.setShuffleModeEnabled(true) }
+                }
+                await("complete identity shuffle") { fixture.player.mediaItemCount == 90 && fixture.player.shuffleModeEnabled }
+                onMain {
+                    assertFalse(fixture.player.playWhenReady)
+                    if (initialShuffle) assertTrue(fixture.player.currentMediaItemIndex >= 30)
+                    else {
+                        assertEquals(provider.track(4).ref, fixture.player.currentMediaItem?.let { TrackRefCodec.decode(it.mediaId) })
+                        assertEquals(350L, fixture.player.currentPosition)
+                    }
+                    assertEquals(90, fixture.player.playbackOrderIndices().toSet().size)
+                    assertFalse(queue.hasNextPage())
+                }
+                assertEquals(listOf(if (library) "" to LibraryCollection.LIKED_TRACKS else "opaque:playlist" to null),
+                    identityRequests.toList())
+                assertTrue(provider.requests.isEmpty())
+            }
+        }
+    }
+
+    @Test
     fun localShuffleLoadsEverythingBeforeReplacingPlaybackAndDistinguishesRandomStartFromClickedTracks() {
         for (randomStart in listOf(false, true)) {
             val provider = ShuffleProvider()
@@ -718,7 +1429,277 @@ class PlaybackQueueIntegrationTest {
         }
     }
 
-    private class ShuffleProvider(private val total: Int = 90) : MusicProvider, CatalogCapability, PlaylistCapability, LibraryCapability, AccountRevisionCapability {
+    @Test
+    fun initialAndEnabledCloudShuffleCommitOnlyAfterTheCompleteResponseAndKeepOnlyTheCurrentLinearEntry() {
+        for (library in listOf(false, true)) for (initialShuffle in listOf(false, true)) for (result in listOf(
+            "shuffled", "canonical", "empty", "unavailable",
+        )) {
+            val provider = ShuffleProvider()
+            val fallbackStarted = CompletableDeferred<Unit>()
+            val fallbackResponse = CompletableDeferred<Unit>()
+            if (result == "unavailable") provider.beforePage = {
+                fallbackStarted.complete(Unit)
+                fallbackResponse.await()
+            }
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val session = PendingCloudShuffle(provider.id)
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42)).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = if (library) SourceContentQueue.forLibrary(router, provider.id, title = "Liked",
+                    initialTracks = initial, startIndex = 14, nextCursor = "30", mediaItemFactory = fixture::sourceItem)
+                else SourceContentQueue(router, PlaylistRef(provider.id, "playlist"), "Playlist", initial,
+                    startIndex = 14, nextCursor = "30", knownTotalCount = 90, mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(true)
+                    fixture.manager.playQueue(queue, startInShuffleMode = initialShuffle, playWhenReady = false)
+                }
+                await("linear cloud queue") { fixture.player.mediaItemCount == 30 }
+                val current = onMain {
+                    fixture.player.seekTo(14, 350L)
+                    requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                }
+                if (!initialShuffle) onMain { fixture.manager.setShuffleModeEnabled(true) }
+                runBlocking { withTimeout(5_000) { session.requested.await() } }
+                onMain {
+                    assertTrue(fixture.manager.shuffleModeIntent.value)
+                    assertFalse(fixture.player.shuffleModeEnabled)
+                    assertEquals((0 until 30).toList(), fixture.player.playbackOrderIndices())
+                    assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                    assertEquals(350L, fixture.player.currentPosition)
+                    assertFalse(fixture.player.playWhenReady)
+                }
+                val tracks = (0 until 90).map(provider::track)
+                val serverOrder = when (result) {
+                    "shuffled" -> tracks.reversed().map { it.ref }
+                    "canonical" -> tracks.map { it.ref }
+                    else -> emptyList()
+                }
+                if (result == "unavailable") {
+                    session.response.completeExceptionally(SourceException(SourceErrorCode.UNAVAILABLE))
+                    runBlocking { withTimeout(5_000) { fallbackStarted.await() } }
+                    onMain {
+                        assertTrue(fixture.manager.shuffleModeIntent.value)
+                        assertFalse(fixture.player.shuffleModeEnabled)
+                        assertEquals(30, fixture.player.mediaItemCount)
+                        assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                    }
+                    fallbackResponse.complete(Unit)
+                } else session.response.complete(SourceShufflePage(serverOrder,
+                    if (serverOrder.isEmpty()) emptyList() else initial, emptySet()))
+                await("committed complete cloud or fallback queue") {
+                    fixture.player.mediaItemCount == 90 && fixture.player.shuffleModeEnabled
+                }
+                onMain {
+                    val order = fixture.player.playbackOrderIndices()
+                    assertEquals(14, order.first())
+                    assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                    assertEquals(350L, fixture.player.currentPosition)
+                    assertFalse(fixture.player.playWhenReady)
+                    assertEquals((0 until 90).toSet(), order.toSet())
+                    val actual = order.map { requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId)) }
+                    val currentRef = provider.track(14).ref
+                    if (serverOrder.isNotEmpty()) assertEquals(listOf(currentRef) + serverOrder.filterNot { it == currentRef }, actual)
+                    else assertFalse(actual == listOf(currentRef) + tracks.map { it.ref }.filterNot { it == currentRef })
+                }
+                assertEquals(if (serverOrder.isEmpty()) listOf(PageRequest(30, 100, "30")) else emptyList<PageRequest>(),
+                    provider.requests.toList())
+            }
+        }
+    }
+
+    @Test
+    fun cloudAndFallbackKeepExistingHistoryWithoutProtectingNewlyAppendedEntries() {
+        for (result in listOf("shuffled", "canonical", "empty", "unavailable")) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val session = PendingCloudShuffle(provider.id)
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42)).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "playlist"), "Playlist", initial,
+                    startIndex = 14, nextCursor = "30", knownTotalCount = 90, mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(false)
+                    fixture.manager.playQueue(queue, playWhenReady = false)
+                }
+                await("history source queue") { fixture.player.mediaItemCount == 30 }
+                val history = listOf(2, 8, 14)
+                val oldOrder = history + (0 until 30).filterNot { it in history }
+                val historyKeys = onMain {
+                    fixture.player.setPlaybackOrder(oldOrder)
+                    fixture.player.shuffleModeEnabled = true
+                    fixture.player.seekTo(14, 350L)
+                    history.map { requireNotNull(fixture.player.getMediaItemAt(it).queueEntryId) }
+                }
+                onMain { fixture.manager.setCloudShuffleEnabled(true) }
+                runBlocking { withTimeout(5_000) { session.requested.await() } }
+                onMain {
+                    assertEquals(oldOrder, fixture.player.playbackOrderIndices())
+                    assertTrue(fixture.player.shuffleModeEnabled)
+                }
+                val tracks = (0 until 90).map(provider::track)
+                val serverOrder = when (result) {
+                    "shuffled" -> tracks.reversed().map { it.ref }
+                    "canonical" -> tracks.map { it.ref }
+                    else -> emptyList()
+                }
+                if (result == "unavailable") session.response.completeExceptionally(SourceException(SourceErrorCode.UNAVAILABLE))
+                else session.response.complete(SourceShufflePage(serverOrder, if (serverOrder.isEmpty()) emptyList() else initial, emptySet()))
+                await("complete shuffle with preserved history") { fixture.player.mediaItemCount == 90 }
+                onMain {
+                    val order = fixture.player.playbackOrderIndices()
+                    val currentPosition = order.indexOf(fixture.player.currentMediaItemIndex)
+                    assertEquals(2, currentPosition)
+                    assertEquals(historyKeys, order.take(currentPosition + 1).map { fixture.player.getMediaItemAt(it).queueEntryId })
+                    assertEquals((30 until 90).toSet(), order.drop(currentPosition + 1).filter { it >= 30 }.toSet())
+                    assertEquals(350L, fixture.player.currentPosition)
+                    assertFalse(fixture.player.playWhenReady)
+                    if (serverOrder.isNotEmpty()) {
+                        val refs = order.map { requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId)) }
+                        val protected = history.map { provider.track(it).ref }
+                        assertEquals(protected + serverOrder.filterNot { it in protected }, refs)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun pendingCloudShuffleDoesNotApplyLateResultsAfterCancellationAccountChangeOrExternalDisable() {
+        for (stop in listOf("cancel", "account", "external")) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val session = PendingCloudShuffle(provider.id, allowLateResponse = true)
+            Fixture(sourceRouter = router, queueSession = { session }).use { fixture ->
+                try {
+                    val queue = SourceContentQueue(router, PlaylistRef(provider.id, "playlist"), "Playlist",
+                        (0 until 30).map(provider::track), startIndex = 14, nextCursor = "30", knownTotalCount = 90,
+                        mediaItemFactory = fixture::sourceItem)
+                    onMain {
+                        fixture.manager.setCloudShuffleEnabled(stop != "external")
+                        fixture.manager.playQueue(queue, startInShuffleMode = stop != "external", playWhenReady = false)
+                    }
+                    await("pending cancellable cloud queue") { fixture.player.mediaItemCount == 30 }
+                    val current = onMain {
+                        fixture.player.seekTo(14, 350L)
+                        requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                    }
+                    if (stop == "external") {
+                        onMain {
+                            fixture.player.setPlaybackOrder(listOf(14) + (0 until 30).filter { it != 14 })
+                            fixture.player.shuffleModeEnabled = true
+                            fixture.manager.setCloudShuffleEnabled(true)
+                        }
+                    }
+                    runBlocking { withTimeout(5_000) { session.requested.await() } }
+                    when (stop) {
+                        "cancel" -> onMain { fixture.manager.setShuffleModeEnabled(false) }
+                        "account" -> provider.accountRevision.value = "account-b"
+                        else -> onMain { fixture.player.shuffleModeEnabled = false }
+                    }
+                    await("stopped cloud intent") { !fixture.manager.shuffleModeIntent.value && !fixture.player.shuffleModeEnabled }
+                    val tracks = (0 until 90).map(provider::track)
+                    session.response.complete(SourceShufflePage(tracks.reversed().map { it.ref }, tracks, emptySet()))
+                    runBlocking { withTimeout(5_000) { session.returned.await() } }
+                    onMain {
+                        assertEquals(30, fixture.player.mediaItemCount)
+                        assertFalse(fixture.player.shuffleModeEnabled)
+                        assertFalse(fixture.manager.shuffleModeIntent.value)
+                        assertEquals(current, fixture.player.currentMediaItem?.queueEntryId)
+                        assertEquals(350L, fixture.player.currentPosition)
+                        assertFalse(fixture.player.playWhenReady)
+                        if (stop == "account") assertEquals(null, fixture.manager.playlistSource)
+                    }
+                } finally {
+                    session.response.complete(SourceShufflePage(emptyList(), emptyList(), emptySet()))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun anInFlightCanonicalPageDoesNotBecomeProtectedHistoryDuringCloudOrFallback() {
+        for (result in listOf("cloud", "empty", "unavailable")) for (selectNewEntry in listOf(false, true)) {
+            val provider = ShuffleProvider()
+            val router = SourceRouter(ProviderRegistry(listOf(provider)))
+            val session = PendingCloudShuffle(provider.id)
+            val pageStarted = CompletableDeferred<Unit>()
+            val pageResponse = CompletableDeferred<Unit>()
+            provider.beforePage = { page ->
+                if (page.offset == 30) { pageStarted.complete(Unit); pageResponse.await() }
+            }
+            Fixture(sourceRouter = router, queueSession = { session }, shuffleRandom = Random(42)).use { fixture ->
+                val initial = (0 until 30).map(provider::track)
+                val queue = SourceContentQueue(router, PlaylistRef(provider.id, "playlist"), "Playlist", initial,
+                    nextCursor = "30", knownTotalCount = 90, mediaItemFactory = fixture::sourceItem)
+                onMain {
+                    fixture.manager.setCloudShuffleEnabled(false)
+                    fixture.manager.playQueue(queue, playWhenReady = false)
+                }
+                await("partial shuffled source") { fixture.player.mediaItemCount == 30 }
+                val history = (0 until 28).filterNot { it == 14 } + 14
+                val historyKeys = onMain {
+                    fixture.player.setPlaybackOrder(history + listOf(28, 29))
+                    fixture.player.shuffleModeEnabled = true
+                    fixture.player.seekTo(14, 350L)
+                    history.map { requireNotNull(fixture.player.getMediaItemAt(it).queueEntryId) }
+                }
+                runBlocking { withTimeout(5_000) { pageStarted.await() } }
+                onMain { fixture.manager.setCloudShuffleEnabled(true) }
+                runBlocking { withTimeout(5_000) { session.requested.await() } }
+                pageResponse.complete(Unit)
+                await("in-flight canonical page completion") { fixture.player.mediaItemCount == 60 }
+                val expectedHistory = onMain {
+                    if (selectNewEntry) {
+                        fixture.player.seekTo(35, 350L)
+                        historyKeys + requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
+                    } else historyKeys
+                }
+                val tracks = (0 until 90).map(provider::track)
+                val serverOrder = if (result == "cloud") tracks.reversed().map { it.ref } else emptyList()
+                if (result == "unavailable") session.response.completeExceptionally(SourceException(SourceErrorCode.UNAVAILABLE))
+                else session.response.complete(SourceShufflePage(serverOrder, if (serverOrder.isEmpty()) emptyList() else initial, emptySet()))
+                await("complete cloud after in-flight page") { fixture.player.mediaItemCount == 90 }
+                onMain {
+                    val order = fixture.player.playbackOrderIndices()
+                    val currentPosition = order.indexOf(fixture.player.currentMediaItemIndex)
+                    assertEquals(expectedHistory.size - 1, currentPosition)
+                    assertEquals(expectedHistory, order.take(currentPosition + 1).map { fixture.player.getMediaItemAt(it).queueEntryId })
+                    assertEquals(350L, fixture.player.currentPosition)
+                    assertFalse(fixture.player.playWhenReady)
+                    if (serverOrder.isNotEmpty()) {
+                        val protected = (history + if (selectNewEntry) listOf(35) else emptyList()).map { provider.track(it).ref }
+                        val actual = order.map { requireNotNull(TrackRefCodec.decode(fixture.player.getMediaItemAt(it).mediaId)) }
+                        assertEquals(protected + serverOrder.filterNot { it in protected }, actual)
+                    }
+                }
+                assertEquals(if (serverOrder.isEmpty()) listOf(30, 60) else listOf(30), provider.requests.map { it.offset })
+            }
+        }
+    }
+
+    private class PendingCloudShuffle(override val providerId: String,
+        private val allowLateResponse: Boolean = false,
+        private val canonicalIds: List<TrackRef>? = null) : QueueSourceSession {
+        val requested = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<SourceShufflePage>()
+        val returned = CompletableDeferred<Unit>()
+        override suspend fun ensureCurrent() = Unit
+        override suspend fun scenes(): List<PrivateFmScene> = error("Unexpected scenes request")
+        override suspend fun radio(parameters: Map<String, String>, similar: Boolean): List<Track> = error("Unexpected radio request")
+        override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?) = canonicalIds
+        override suspend fun shuffle(playlistId: String, songId: String, algorithm: String,
+            collection: LibraryCollection?): SourceShufflePage {
+            requested.complete(Unit)
+            return if (allowLateResponse) withContext(NonCancellable) {
+                response.await().also { returned.complete(Unit) }
+            } else response.await().also { returned.complete(Unit) }
+        }
+    }
+
+    private class ShuffleProvider(private val total: Int = 90, private val metadataArtwork: Boolean = false) : MusicProvider,
+        CatalogCapability, BatchCatalogCapability, PlaylistCapability, LibraryCapability, AccountRevisionCapability {
         override val id = "shuffle.external"
         override val displayName = "Shuffle external"
         override val capabilities = setOf(SourceCapability.TRACK, SourceCapability.PLAYLIST, SourceCapability.LIBRARY)
@@ -726,12 +1707,22 @@ class PlaybackQueueIntegrationTest {
         override val accountRevision = MutableStateFlow("account-a")
         val requests = CopyOnWriteArrayList<PageRequest>()
         val catalogRequests = CopyOnWriteArrayList<TrackRef>()
+        val catalogBatches = CopyOnWriteArrayList<List<TrackRef>>()
         var beforePage: suspend (PageRequest) -> Unit = {}
-        fun track(index: Int) = Track(TrackRef(id, "track-$index"), "Track $index", emptyList())
+        var beforeTracks: suspend (List<TrackRef>) -> Unit = {}
+        var omittedTracks = emptySet<TrackRef>()
+        fun track(index: Int) = Track(TrackRef(id, "track-$index"), "Track $index", emptyList(),
+            artworkUrl = if (metadataArtwork) "https://example.test/track-$index.jpg" else "")
         override suspend fun search(query: String, page: PageRequest) = SourcePage<Track>(emptyList())
         override suspend fun getTrack(ref: TrackRef): Track {
             catalogRequests += ref
             return track(ref.trackId.removePrefix("track-").toInt())
+        }
+        override suspend fun getTracks(refs: List<TrackRef>): List<Track> {
+            catalogBatches += refs.toList()
+            beforeTracks(refs)
+            catalogRequests += refs
+            return refs.filterNot { it in omittedTracks }.map { track(it.trackId.removePrefix("track-").toInt()) }
         }
         override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(ref, "Playlist", trackCount = total)
         override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
@@ -748,7 +1739,7 @@ class PlaybackQueueIntegrationTest {
 
     private class Fixture(placeholders: Boolean = false, sourceRouter: SourceRouter? = null,
         queueSession: (suspend (String?) -> QueueSourceSession)? = null,
-        shuffleRandom: Random = Random.Default) : AutoCloseable {
+        shuffleRandom: Random = Random.Default, batchTracks: Boolean = false) : AutoCloseable {
         private val context = InstrumentationRegistry.getInstrumentation().targetContext
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private val silence = File.createTempFile("queue-regression-", ".wav", context.cacheDir).apply {
@@ -789,6 +1780,8 @@ class PlaybackQueueIntegrationTest {
         }
         val manager = onMain {
             val sources = object : QueueSourceActions {
+                override fun canBatchTracks(providerId: String): Boolean = batchTracks &&
+                    (sourceRouter?.registry?.provider(providerId) as? BatchCatalogCapability)?.supportsBatchTrackRequests == true
                 override suspend fun open(providerId: String?): QueueSourceSession =
                     queueSession?.invoke(providerId) ?: error("Unexpected recommendation request")
                 override suspend fun tracks(refs: List<TrackRef>): List<Track> {
@@ -808,6 +1801,12 @@ class PlaybackQueueIntegrationTest {
         fun sourceItem(track: Track): MediaItem = track.toMediaMetadata().toMediaItem().buildUpon()
             .setUri(silence.toURI().toString()).build()
         fun items(): List<MediaItem> = (0 until player.mediaItemCount).map(player::getMediaItemAt)
+        fun sourceOrder(): List<TrackRef> = player.playbackOrderIndices().map {
+            requireNotNull(TrackRefCodec.decode(player.getMediaItemAt(it).mediaId))
+        }
+        fun metadataWindowReady(): Boolean = player.playbackOrderIndices().let { order ->
+            order.isNotEmpty() && (order.take(13) + order.takeLast(12)).all { !isPlaceholderMediaItem(player.getMediaItemAt(it)) }
+        }
 
         override fun close() {
             onMain {

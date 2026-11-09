@@ -1,6 +1,7 @@
 package com.ljyh.mei.playback
 
 import android.util.Log
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -91,6 +92,8 @@ class PlaybackQueueManager(
     private var serverShuffleJob: Job? = null
     private var serverShuffleGeneration = 0L
     private var serverShuffleRequested = false
+    private var pendingInitialShuffleReset = false
+    private var shuffleDisableNotifications = 0L
     private var cloudShuffleEnabled: Boolean? = null
     private var localShuffleJob: Job? = null
     private val cancelledLocalShuffleJobs = mutableListOf<Job>()
@@ -165,6 +168,7 @@ class PlaybackQueueManager(
     }
 
     fun cancelServerShuffle() {
+        pendingInitialShuffleReset = false
         cancelLocalShuffle()
         serverShuffleGeneration++
         serverShuffleJob?.cancel()
@@ -207,7 +211,7 @@ class PlaybackQueueManager(
             else if (player.shuffleModeEnabled && sourceContentQueue?.hasNextPage() == true) requestLocalShuffle()
             return
         }
-        val shuffleRequested = player.shuffleModeEnabled || localShuffleJob?.isActive == true
+        val shuffleRequested = player.shuffleModeEnabled || _isShuffleModeEnabled.value
         cancelServerShuffle()
         if (enabled) {
             serverShuffleRequested = false
@@ -218,6 +222,16 @@ class PlaybackQueueManager(
     }
 
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+        if (!shuffleModeEnabled) shuffleDisableNotifications++
+        if (shuffleModeEnabled != player.shuffleModeEnabled) {
+            if (!shuffleModeEnabled) pendingInitialShuffleReset = false
+            return
+        }
+        // Reset notifications from a new queue can arrive after its complete shuffle request starts.
+        val initialReset = !shuffleModeEnabled && pendingInitialShuffleReset
+        pendingInitialShuffleReset = false
+        if (initialReset && _isShuffleModeEnabled.value &&
+            (serverShuffleJob?.isActive == true || localShuffleJob?.isActive == true)) return
         _isShuffleModeEnabled.value = shuffleModeEnabled
         if (!shuffleModeEnabled) {
             cancelServerShuffle()
@@ -233,6 +247,7 @@ class PlaybackQueueManager(
     }
 
     private fun requestServerShuffle() {
+        val startedAt = SystemClock.elapsedRealtime()
         if (sourceContentQueue == null && pendingSourceContentContext != null) return
         val source = playlistSource ?: return
         if (source.providerId != null && sourceContentQueue == null) return
@@ -240,42 +255,120 @@ class PlaybackQueueManager(
         val item = player.currentMediaItem ?: return
         val seed = item.metadata?.trackRef ?: TrackRefCodec.decode(item.mediaId) ?: return
         val providerId = source.providerId ?: ProviderIds.NETEASE
-        if (cloudShuffleEnabled != true || serverShuffleRequested || isFmMode || !player.shuffleModeEnabled ||
+        if (cloudShuffleEnabled != true || serverShuffleRequested || isFmMode ||
+            !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
             !serverShuffleAllowed() || !source.supportsShuffle || seed.providerId != providerId ||
             item.metadata?.isLocal == true || item.metadata?.isPodcast == true
         ) return
         serverShuffleRequested = true
         val generation = ++serverShuffleGeneration
         val contentQueue = sourceContentQueue
+        var orderBeforeRequest = currentShuffleOrderEntries()
+        var prefixBeforeRequest = protectedPlaybackEntries(orderBeforeRequest)
+        Timber.tag("SourceShuffle").d("stage=request elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
         serverShuffleJob = scope.launch(Dispatchers.Main) {
+            var localPrepared = false
             try {
                 if (contentQueue != null && !contentQueue.isSourceCurrent()) return@launch
-                val owner = sources.open(providerId)
-                val data = owner.shuffle(source.playlistIdentity.orEmpty(), seed.trackId, source.alg, source.libraryCollection)
+                val refs = contentQueue?.let { queue ->
+                    try {
+                        sourceShuffleIds(queue)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (error is SourceException && error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
+                        Timber.tag(TAG).w("Complete source identities unavailable before server shuffle code=%s",
+                            (error as? SourceException)?.code?.name ?: error.javaClass.simpleName)
+                        null
+                    }
+                }
+                Timber.tag("SourceShuffle").d("stage=identities elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, refs?.size ?: 0)
+                currentCoroutineContext().ensureActive()
+                if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue ||
+                    cloudShuffleEnabled != true || !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
+                    isFmMode || !serverShuffleAllowed()) return@launch
+                if (refs != null) {
+                    val existing = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+                    localPrepared = player.shuffleModeEnabled && refs.all { TrackRefCodec.mediaId(it) in existing }
+                    if (!localPrepared) try {
+                        localPrepared = applyLocalShuffle(stablePlayer, contentQueue, refs, null, orderBeforeRequest, prefixBeforeRequest) {
+                            if (contentQueue != null && !contentQueue.isSourceCurrent()) throw CancellationException("Source shuffle owner changed")
+                            currentCoroutineContext().ensureActive()
+                            if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue ||
+                                cloudShuffleEnabled != true || !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
+                                isFmMode || !serverShuffleAllowed()) throw CancellationException("Source shuffle changed")
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (error is SourceException && error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
+                        Timber.tag(TAG).w("Initial local shuffle metadata unavailable code=%s",
+                            (error as? SourceException)?.code?.name ?: error.javaClass.simpleName)
+                    }
+                    if (localPrepared) {
+                        orderBeforeRequest = currentShuffleOrderEntries()
+                        prefixBeforeRequest = protectedPlaybackEntries(orderBeforeRequest)
+                        Timber.tag("SourceShuffle").d("stage=local elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
+                        checkAndLoadMetadata()
+                    }
+                }
+                val owner = contentQueue?.canonicalShuffleInput()?.second ?: sources.open(providerId)
+                val current = player.currentMediaItem ?: return@launch
+                val playing = current.metadata?.trackRef ?: TrackRefCodec.decode(current.mediaId) ?: return@launch
+                if (playing.providerId != providerId) return@launch
+                val data = owner.shuffle(source.playlistIdentity.orEmpty(), playing.trackId,
+                    source.alg, source.libraryCollection, refs)
+                Timber.tag("SourceShuffle").d("stage=source elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, data.order.size)
                 if (contentQueue != null && !contentQueue.isSourceCurrent()) return@launch
                 owner.ensureCurrent()
                 currentCoroutineContext().ensureActive()
                 if (generation != serverShuffleGeneration || playlistSource != source ||
                     sourceContentQueue !== contentQueue ||
-                    cloudShuffleEnabled != true || !player.shuffleModeEnabled || isFmMode || !serverShuffleAllowed()
+                    cloudShuffleEnabled != true || !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
+                    isFmMode || !serverShuffleAllowed()
                 ) return@launch
+                data.canonicalOrder?.let { contentQueue?.rememberCanonicalShuffleInput(it, owner) }
+                currentCoroutineContext().ensureActive()
+                if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue) return@launch
                 var applied = false
-                stablePlayer.withInternalQueueUpdate { applied = applyServerShuffle(stablePlayer, data) }
+                val plan = createSourceShufflePlan(data, orderBeforeRequest, prefixBeforeRequest)
+                if (plan != null) {
+                    val validate: suspend () -> Unit = {
+                        owner.ensureCurrent()
+                        if (contentQueue != null && !contentQueue.isSourceCurrent()) throw CancellationException("Source shuffle owner changed")
+                        currentCoroutineContext().ensureActive()
+                        if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue ||
+                            cloudShuffleEnabled != true || !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
+                            isFmMode || !serverShuffleAllowed()) throw CancellationException("Source shuffle changed")
+                    }
+                    val finalOrder = if (sources.canBatchTracks(providerId)) {
+                        hydrateSourceShufflePlan(plan, orderBeforeRequest, prefixBeforeRequest, ensureCurrent = validate)
+                    } else {
+                        validate()
+                        sourceShuffleOrder(plan, orderBeforeRequest, prefixBeforeRequest)
+                    }
+                    Timber.tag("SourceShuffle").d("stage=metadata elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, plan.metadata.size)
+                    stablePlayer.withInternalQueueUpdate {
+                        applied = applyServerShuffle(stablePlayer, plan, finalOrder)
+                    }
+                }
                 // Keep ownership checks while preventing ordinary pages from appending duplicates.
                 if (applied) {
                     sourceContentPageJob?.cancel()
                     sourceContentPageJob = null
                     contentQueue?.freezePagination()
-                    Timber.tag(TAG).d("Applied cloud shuffle with %d tracks", data.order.size)
-                } else requestLocalShuffle()
+                    Timber.tag("SourceShuffle").d("stage=applied elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
+                    Timber.tag(TAG).d("Applied source shuffle with %d tracks", data.order.size)
+                } else if (!localPrepared) requestLocalShuffle(orderBeforeRequest, prefixBeforeRequest)
                 checkAndLoadMetadata()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 Timber.tag(TAG).w(error, "Server shuffle unavailable")
-                if (generation == serverShuffleGeneration && sourceContentQueue === contentQueue &&
-                    cloudShuffleEnabled == true && player.shuffleModeEnabled && !isFmMode && serverShuffleAllowed()) {
-                    requestLocalShuffle()
+                if (!localPrepared && generation == serverShuffleGeneration && sourceContentQueue === contentQueue &&
+                    cloudShuffleEnabled == true && (player.shuffleModeEnabled || _isShuffleModeEnabled.value) &&
+                    !isFmMode && serverShuffleAllowed()) {
+                    requestLocalShuffle(orderBeforeRequest, prefixBeforeRequest)
                 }
             } finally {
                 if (generation == serverShuffleGeneration) serverShuffleJob = null
@@ -283,52 +376,179 @@ class PlaybackQueueManager(
         }
     }
 
-    private fun applyServerShuffle(stablePlayer: StableDeckPlayer, data: SourceShufflePage): Boolean {
+    private class SourceShufflePlan(val entries: MutableList<MediaItem>, val order: MutableList<Int>,
+        val unavailable: Set<String>, val metadata: MutableMap<String, MediaItem>)
+
+    private fun createSourceShufflePlan(data: SourceShufflePage,
+        orderBeforeRequest: List<String>, prefixBeforeRequest: List<String>): SourceShufflePlan? {
         val songIds = data.order.map(TrackRefCodec::mediaId).distinct()
-        if (songIds.isEmpty() || player.mediaItemCount == 0) return false
-        val previousOrder = player.playbackOrderIndices()
-        val currentPosition = previousOrder.indexOf(player.currentMediaItemIndex)
-        if (currentPosition < 0) return false
-        val protectedIds = previousOrder.take(currentPosition + 1)
-            .mapNotNull { player.getMediaItemAt(it).queueEntryId }.toSet()
-        val protectedOrder = previousOrder.take(currentPosition + 1)
-            .mapNotNull { player.getMediaItemAt(it).queueEntryId }
+        if (songIds.isEmpty() || player.mediaItemCount == 0) return null
+        val protectedOrder = protectedPlaybackEntries(orderBeforeRequest, prefixBeforeRequest)
+        if (protectedOrder.isEmpty()) return null
+        val protectedIds = protectedOrder.toSet()
         val unavailableIds = data.unavailable.map(TrackRefCodec::mediaId).toSet()
         val resolvedTracks = data.tracks.associate { track ->
             TrackRefCodec.mediaId(track.ref) to runCatching { track.toMediaMetadata().toMediaItem() }.getOrNull()
-        }
-
-        // Keep the current/history prefix, but do not introduce known unavailable tracks.
-        for (index in player.mediaItemCount - 1 downTo 0) {
-            val item = player.getMediaItemAt(index)
-            if (item.mediaId in unavailableIds && item.queueEntryId !in protectedIds &&
-                item.metadata?.isLocal != true
-            ) player.removeMediaItem(index)
-        }
-        val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
-        for (index in 0 until player.mediaItemCount) {
-            val item = player.getMediaItemAt(index)
-            if (needsMetadataHydration(item)) {
-                resolvedTracks[item.mediaId]?.let { player.replaceMediaItem(index, it) }
-            }
-        }
-        val additions = songIds.filter { it !in existingIds && it !in unavailableIds }.map { id ->
+        }.mapNotNull { (id, item) -> item?.let { id to it } }.toMap().toMutableMap()
+        val entries = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }.filter {
+            it.mediaId !in unavailableIds || it.queueEntryId in protectedIds || it.metadata?.isLocal == true
+        }.toMutableList()
+        val existingIds = entries.map(MediaItem::mediaId).toSet()
+        entries += songIds.filter { it !in existingIds && it !in unavailableIds }.map { id ->
             resolvedTracks[id] ?: createPlaceholder(id)
         }
-        if (additions.isNotEmpty()) player.addMediaItems(additions)
-
-        val entries = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
         val indexByKey = entries.indices.associateBy { entries[it].queueEntryId }
         val prefix = protectedOrder.mapNotNull { indexByKey[it] }
         val pending = entries.indices.filter { entries[it].queueEntryId !in protectedIds }
         val bySong = pending.groupBy { entries[it].mediaId }
         val ordered = songIds.flatMap { bySong[it].orEmpty() }.toMutableList()
         val included = ordered.toSet()
-        pending.filterNot { it in included }.shuffled().forEach { index ->
-            ordered.add(kotlin.random.Random.nextInt(ordered.size + 1), index)
+        pending.filterNot { it in included }.shuffled(shuffleRandom).forEach { index ->
+            ordered.add(shuffleRandom.nextInt(ordered.size + 1), index)
         }
-        stablePlayer.setPlaybackOrder(prefix + ordered)
+        return SourceShufflePlan(entries, (prefix + ordered).toMutableList(), unavailableIds, resolvedTracks)
+    }
+
+    /** Preserve the frozen pending sequence while rebasing history onto the current local playback. */
+    private fun sourceShuffleOrder(plan: SourceShufflePlan, previousOrder: List<String>, previousPrefix: List<String>): List<Int> {
+        val protected = protectedPlaybackEntries(previousOrder, previousPrefix)
+        if (protected.isEmpty()) return emptyList()
+        val protectedEntries = protected.toSet()
+        val byEntry = plan.entries.indices.mapNotNull { index -> plan.entries[index].queueEntryId?.let { it to index } }.toMap().toMutableMap()
+        val additions = plan.entries.indices.filter { plan.entries[it].queueEntryId == null }.associateBy { plan.entries[it].mediaId }.toMutableMap()
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (item.mediaId in plan.unavailable && item.queueEntryId !in protectedEntries && item.metadata?.isLocal != true) continue
+            if (!needsMetadataHydration(item)) plan.metadata[item.mediaId] = item
+            val entry = item.queueEntryId ?: continue
+            val existing = byEntry[entry]
+            if (existing != null) plan.entries[existing] = item else {
+                val target = additions.remove(item.mediaId) ?: plan.entries.size.also { plan.order += it }
+                if (target == plan.entries.size) plan.entries += item else plan.entries[target] = item
+                byEntry[entry] = target
+            }
+        }
+        val prefix = protected.mapNotNull { byEntry[it] }
+        val prefixSet = prefix.toSet()
+        return prefix + plan.order.filter { index -> index !in prefixSet &&
+            (plan.entries[index].mediaId !in plan.unavailable || plan.entries[index].metadata?.isLocal == true) }
+    }
+
+    private suspend fun hydrateSourceShufflePlan(plan: SourceShufflePlan, previousOrder: List<String>, previousPrefix: List<String>,
+        preview: Boolean = false,
+        ensureCurrent: suspend () -> Unit): List<Int> {
+        val attempted = mutableSetOf<String>()
+        var batches = 0
+        while (true) {
+            ensureCurrent()
+            val order = sourceShuffleOrder(plan, previousOrder, previousPrefix)
+            val currentEntry = player.currentMediaItem?.queueEntryId
+            val position = order.indexOfFirst { plan.entries[it].queueEntryId == currentEntry }
+            if (position < 0) return emptyList()
+            val missing = order.drop(position).take(13).map { plan.entries[it] }.filter {
+                needsMetadataHydration(plan.metadata[it.mediaId] ?: it) && it.mediaId !in attempted
+            }.mapNotNull { TrackRefCodec.decode(it.mediaId) }.distinct()
+            if (missing.isEmpty() || preview && (batches >= 2 || attempted.size >= 30)) return order
+            val requested = if (preview) missing.take(30 - attempted.size) else missing
+            attempted += requested.map(TrackRefCodec::mediaId)
+            batches++
+            try {
+                val omitted = loadShufflePlanMetadata(plan, requested, ensureCurrent)
+                if (preview) moveMissingPreviewEntries(plan, omitted, protectedPlaybackEntries(previousOrder, previousPrefix).toSet())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (preview || error is SourceException && error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
+                ensureCurrent()
+                Timber.tag("SourceShuffle").w("Final order metadata unavailable")
+            }
+        }
+    }
+
+    private suspend fun loadShufflePlanMetadata(plan: SourceShufflePlan, refs: List<TrackRef>,
+        ensureCurrent: suspend () -> Unit): Set<String> {
+        val tracks = withContext(Dispatchers.IO) { sources.tracks(refs) }
+        ensureCurrent()
+        val requested = refs.toSet()
+        tracks.filter { it.ref in requested }.forEach { track ->
+            plan.metadata[TrackRefCodec.mediaId(track.ref)] = track.toMediaMetadata().toMediaItem()
+        }
+        return refs.map(TrackRefCodec::mediaId).filter { plan.metadata[it]?.let(::isPlayableMediaItem) != true }.toSet()
+    }
+
+    /** Resolve the selected track and its actual first screen before preparing any audio. */
+    private suspend fun hydrateInitialShufflePlan(plan: SourceShufflePlan, selectedIndex: Int, randomStart: Boolean,
+        ensureCurrent: suspend () -> Unit) {
+        val attempted = mutableSetOf<String>()
+        val selected = plan.entries[selectedIndex].mediaId
+        val fallbackCandidates = plan.order.take(30).toSet()
+        var selectedOmitted = false
+        repeat(2) {
+            ensureCurrent()
+            val missing = plan.order.take(13).map { plan.entries[it] }.filter {
+                needsMetadataHydration(plan.metadata[it.mediaId] ?: it) && it.mediaId !in attempted
+            }.mapNotNull { TrackRefCodec.decode(it.mediaId) }.distinct().take(30 - attempted.size)
+            if (missing.isEmpty()) return@repeat
+            attempted += missing.map(TrackRefCodec::mediaId)
+            val omitted = loadShufflePlanMetadata(plan, missing, ensureCurrent)
+            selectedOmitted = selectedOmitted || selected in omitted
+            if (selectedOmitted && !randomStart) return
+            moveMissingPreviewEntries(plan, omitted)
+        }
+        ensureCurrent()
+        if (selectedOmitted && randomStart) {
+            val resolved = plan.order.firstOrNull { index -> index in fallbackCandidates &&
+                isPlayableMediaItem(plan.metadata[plan.entries[index].mediaId] ?: plan.entries[index]) }
+            val target = resolved ?: selectedIndex
+            plan.order.remove(target)
+            plan.order.add(0, target)
+        }
+    }
+
+    private fun moveMissingPreviewEntries(plan: SourceShufflePlan, omitted: Set<String>, protected: Set<String> = emptySet()) {
+        if (omitted.isEmpty()) return
+        val moved = plan.order.filter { plan.entries[it].mediaId in omitted && plan.entries[it].queueEntryId !in protected }.toSet()
+        val next = plan.order.filterNot { it in moved } + plan.order.filter { it in moved }
+        plan.order.clear()
+        plan.order += next
+    }
+
+    private fun applyServerShuffle(stablePlayer: StableDeckPlayer, plan: SourceShufflePlan, order: List<Int>): Boolean {
+        if (order.isEmpty() || player.mediaItemCount == 0) return false
+        val retained = order.mapNotNull { plan.entries[it].queueEntryId }.toSet()
+        for (index in player.mediaItemCount - 1 downTo 0) {
+            val item = player.getMediaItemAt(index)
+            if (item.queueEntryId !in retained && item.mediaId in plan.unavailable && item.metadata?.isLocal != true) player.removeMediaItem(index)
+        }
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (needsMetadataHydration(item)) plan.metadata[item.mediaId]?.let { metadata ->
+                player.replaceMediaItem(index, item.queueEntryId?.let(metadata::withQueueEntryId) ?: metadata)
+            }
+        }
+        // Preserve the source list when shuffle is disabled; only the playback order is random.
+        val additions = order.filter { plan.entries[it].queueEntryId == null }.sorted()
+        val firstAddition = player.mediaItemCount
+        if (additions.isNotEmpty()) player.addMediaItems(additions.map { plan.metadata[plan.entries[it].mediaId] ?: plan.entries[it] })
+        val indices = (0 until player.mediaItemCount).associateBy { player.getMediaItemAt(it).queueEntryId }
+        val additionIndices = additions.withIndex().associate { it.value to firstAddition + it.index }
+        stablePlayer.setPlaybackOrder(order.mapNotNull { additionIndices[it] ?: indices[plan.entries[it].queueEntryId] })
+        _isShuffleModeEnabled.value = true
+        player.shuffleModeEnabled = true
         return true
+    }
+
+    /** Linear positions before the current track do not prove that those entries were played. */
+    private fun currentShuffleOrderEntries(): List<String> = if (player.shuffleModeEnabled) {
+        player.playbackOrderIndices().mapNotNull { player.getMediaItemAt(it).queueEntryId }
+    } else emptyList()
+
+    private fun protectedPlaybackEntries(order: List<String>, previousPrefix: List<String> = emptyList()): List<String> {
+        val current = player.currentMediaItem?.queueEntryId ?: return emptyList()
+        if (order.isEmpty()) return listOf(current)
+        val position = order.indexOf(current)
+        if (position < 0) return (previousPrefix + current).distinct()
+        return order.take(position + 1)
     }
 
     fun startFmMode(seedItem: MediaItem, providerId: String? = null) {
@@ -708,13 +928,35 @@ class PlaybackQueueManager(
                 _queueState.value = QueueState.Loading(queue.title ?: "加载中")
 
                 var status = queue.getInitialStatus()
+                var identityOnlyShuffle = false
                 val preferCloud = startInShuffleMode && cloudShuffleEnabled == true &&
                     queue.playlistSource != null && serverShuffleAllowed()
-                if (startInShuffleMode && queue is SourceContentQueue && !preferCloud) {
+                if (startInShuffleMode && queue is SourceContentQueue) {
                     pendingLocalQueueGeneration = generation
                     pendingLocalQueuePreviousState = previousState
                     _isShuffleModeEnabled.value = true
-                    status = queue.loadAll()
+                    val refs = try {
+                        sourceShuffleIds(queue)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (!preferCloud || error is SourceException && error.code in
+                            setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
+                        Timber.tag(TAG).w("Complete source identities unavailable before initial server shuffle code=%s",
+                            (error as? SourceException)?.code?.name ?: error.javaClass.simpleName)
+                        null
+                    }
+                    status = if (refs == null) {
+                        if (preferCloud) status else queue.loadAll()
+                    } else {
+                        val selected = status.ids.getOrNull(status.mediaItemIndex)?.first
+                        val cached = status.ids.toMap()
+                        val ids = refs.map { TrackRefCodec.mediaId(it) }
+                        val selectedIndex = ids.indexOf(selected)
+                        if (selectedIndex < 0) throw SourceException(SourceErrorCode.NOT_FOUND)
+                        identityOnlyShuffle = true
+                        status.copy(ids = ids.map { it to cached[it] }, mediaItemIndex = selectedIndex)
+                    }
                     currentCoroutineContext().ensureActive()
                     if (generation != queueBuildGeneration) return@launch
                 }
@@ -725,16 +967,34 @@ class PlaybackQueueManager(
                     return@launch
                 }
 
-                val startIndex = if (startInShuffleMode && randomStart) shuffleRandom.nextInt(allIds.size) else status.mediaItemIndex
+                var startIndex = if (startInShuffleMode && randomStart) shuffleRandom.nextInt(allIds.size) else status.mediaItemIndex
                 if (startIndex !in allIds.indices) {
                     _queueState.value = QueueState.Error("播放位置无效")
                     return@launch
                 }
 
+                var initialOrder = if (startInShuffleMode && (!preferCloud || identityOnlyShuffle)) {
+                    listOf(startIndex) + allIds.indices.filterNot { it == startIndex }.shuffled(shuffleRandom)
+                } else emptyList()
+                val prefilled = if (identityOnlyShuffle && queue is SourceContentQueue && sources.canBatchTracks(queue.providerId)) {
+                    val entries = allIds.map { it.second ?: createPlaceholder(it.first) }.toMutableList()
+                    val plan = SourceShufflePlan(entries, initialOrder.toMutableList(), emptySet(),
+                        entries.filterNot(::needsMetadataHydration).associateBy(MediaItem::mediaId).toMutableMap())
+                    hydrateInitialShufflePlan(plan, startIndex, randomStart) {
+                        if (!queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+                        currentCoroutineContext().ensureActive()
+                        if (released || generation != queueBuildGeneration) throw CancellationException("Initial shuffle changed")
+                    }
+                    initialOrder = plan.order.toList()
+                    if (randomStart) startIndex = initialOrder.first()
+                    entries.map { plan.metadata[it.mediaId] ?: it }
+                } else null
+
                 // The selected item must be hydrated before prepare(). A placeholder can fail
                 // immediately in the player, and MusicService handles that failure by seeking
                 // to the next item (which is random when shuffle is enabled).
-                val selectedItem = hydrateQueueItem(allIds[startIndex])
+                val selectedItem = if (prefilled != null) prefilled[startIndex].takeIf(::isPlayableMediaItem)
+                    else hydrateQueueItem(allIds[startIndex])
                 if (selectedItem == null) {
                     Log.e(TAG, "Unable to hydrate selected item ${allIds[startIndex].first}")
                     if (generation == queueBuildGeneration) {
@@ -749,7 +1009,7 @@ class PlaybackQueueManager(
                 pendingLocalQueueGeneration = null
                 pendingLocalQueuePreviousState = null
 
-                val mediaItems = allIds.mapIndexed { index, item ->
+                val mediaItems = prefilled ?: allIds.mapIndexed { index, item ->
                     if (index == startIndex) selectedItem
                     else item.second ?: createPlaceholder(item.first)
                 }
@@ -765,13 +1025,17 @@ class PlaybackQueueManager(
                 player.clearMediaItems()
 
                 // 强制先关闭随机模式 必须先关掉，才能保证 setMediaItems 里的 index 是线性的、准确的
+                val initialShuffleReset = preferCloud && player.shuffleModeEnabled
+                val disableNotificationsBeforeReset = shuffleDisableNotifications
                 player.shuffleModeEnabled = false
                 _isShuffleModeEnabled.value = false
 
                 // 设置列表并直接跳转 此时 shuffle 是 false，所以 status.mediaItemIndex 绝对对应 list 里的第 N 个
                 player.setMediaItems(mediaItems, startIndex, status.position.toLong())
                 playlistSource = queue.playlistSource
+                if (identityOnlyShuffle) (queue as SourceContentQueue).freezePagination()
                 (queue as? SourceContentQueue)?.let(::attachSourceContentQueue)
+                pendingInitialShuffleReset = initialShuffleReset && shuffleDisableNotifications == disableNotificationsBeforeReset
                 serverShuffleRequested = false
 
                 player.repeatMode = repeatMode
@@ -779,12 +1043,11 @@ class PlaybackQueueManager(
 
                 // 如果需要，再开启随机 此时当前播放的歌曲已经定下来了，ExoPlayer 只会打乱"后面"的歌
                 if (startInShuffleMode) {
-                    val remaining = mediaItems.indices.filter { it != startIndex }
-                    (player as? StableDeckPlayer)?.setPlaybackOrder(
-                        listOf(startIndex) + if (preferCloud) remaining else remaining.shuffled(shuffleRandom),
-                    )
-                    player.shuffleModeEnabled = true
                     _isShuffleModeEnabled.value = true
+                    if (!preferCloud || identityOnlyShuffle) {
+                        (player as? StableDeckPlayer)?.setPlaybackOrder(initialOrder)
+                        player.shuffleModeEnabled = true
+                    }
                 }
 
                 player.playWhenReady = playWhenReady
@@ -857,25 +1120,22 @@ class PlaybackQueueManager(
     }
 
     fun setShuffleModeEnabled(enabled: Boolean) {
+        val startedAt = SystemClock.elapsedRealtime()
+        if (enabled) Timber.tag("SourceShuffle").d("stage=toggle elapsedMs=0 count=%d", player.mediaItemCount)
         if (isFmMode && !_queueAutoplayEnabled.value && enabled) {
             Log.w(TAG, "Shuffle is not allowed in FM mode")
             return
         }
         scope.launch(Dispatchers.Main) {
+            if (enabled) Timber.tag("SourceShuffle").d("stage=dispatch elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
             if (!enabled) {
                 cancelServerShuffle()
                 _isShuffleModeEnabled.value = false
                 player.shuffleModeEnabled = false
+                loadSourceContentPageIfNeeded()
             } else if (cloudShuffleEnabled == true && playlistSource != null && serverShuffleAllowed()) {
                 cancelLocalShuffle()
-                if (!player.shuffleModeEnabled && player.mediaItemCount > 0) {
-                    val current = player.currentMediaItemIndex
-                    (player as? StableDeckPlayer)?.setPlaybackOrder(
-                        listOf(current) + (0 until player.mediaItemCount).filter { it != current },
-                    )
-                }
                 _isShuffleModeEnabled.value = true
-                player.shuffleModeEnabled = true
                 serverShuffleRequested = false
                 requestServerShuffle()
             } else {
@@ -885,10 +1145,12 @@ class PlaybackQueueManager(
     }
 
     /** The old queue keeps playing until every canonical page is ready for one shuffle commit. */
-    private fun requestLocalShuffle() {
+    private fun requestLocalShuffle(previousOrder: List<String>? = null, previousPrefix: List<String>? = null) {
         if (released || isFmMode && !_queueAutoplayEnabled.value || localShuffleJob?.isActive == true ||
             sourceContentQueue == null && pendingSourceContentContext != null) return
         val queue = sourceContentQueue
+        val orderBeforeRequest = previousOrder ?: currentShuffleOrderEntries()
+        val prefixBeforeRequest = previousPrefix ?: protectedPlaybackEntries(orderBeforeRequest)
         val stablePlayer = player as? StableDeckPlayer
         if (stablePlayer == null) {
             if (queue == null) {
@@ -910,33 +1172,17 @@ class PlaybackQueueManager(
                 val pageJob = sourceContentPageJob
                 pageJob?.cancelAndJoin()
                 if (sourceContentPageJob === pageJob) sourceContentPageJob = null
-                val status = if (queue != null && !queue.hasCloudOrder) queue.loadAll() else null
+                val refs = queue?.let { sourceShuffleIds(it) }
+                val status = if (refs == null && queue != null && !queue.hasCloudOrder) queue.loadAll() else null
                 if (queue != null && !queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
                 currentCoroutineContext().ensureActive()
                 if (released || generation != localShuffleGeneration || buildGeneration != queueBuildGeneration ||
                     sourceContentQueue !== queue || isFmMode && !_queueAutoplayEnabled.value) return@launch
-                val currentCount = player.mediaItemCount
-                if (currentCount == 0) return@launch
-                val additions = if (status != null) {
-                    if (status.ids.take(currentCount).map { it.first } !=
-                        (0 until currentCount).map { player.getMediaItemAt(it).mediaId }) {
-                        throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-                    }
-                    status.ids.drop(currentCount).map { it.second ?: createPlaceholder(it.first) }
-                } else emptyList()
-                stablePlayer.withInternalQueueUpdate {
-                    if (additions.isNotEmpty()) player.addMediaItems(additions)
-                    val previousOrder = player.playbackOrderIndices()
-                    val currentPosition = previousOrder.indexOf(player.currentMediaItemIndex)
-                    if (currentPosition >= 0) {
-                        val prefix = if (player.shuffleModeEnabled) previousOrder.take(currentPosition + 1)
-                            else listOf(player.currentMediaItemIndex)
-                        val protected = prefix.toSet()
-                        stablePlayer.setPlaybackOrder(prefix + (0 until player.mediaItemCount)
-                            .filterNot { it in protected }.shuffled(shuffleRandom))
-                        _isShuffleModeEnabled.value = true
-                        player.shuffleModeEnabled = true
-                    }
+                applyLocalShuffle(stablePlayer, queue, refs, status, orderBeforeRequest, prefixBeforeRequest) {
+                    if (queue != null && !queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+                    currentCoroutineContext().ensureActive()
+                    if (released || generation != localShuffleGeneration || buildGeneration != queueBuildGeneration ||
+                        sourceContentQueue !== queue || isFmMode && !_queueAutoplayEnabled.value) throw CancellationException("Local shuffle changed")
                 }
                 _queueState.value = QueueState.Playing(queue?.title ?: "播放列表", player.mediaItemCount)
                 checkAndLoadMetadata()
@@ -958,10 +1204,70 @@ class PlaybackQueueManager(
         localShuffleJob?.start()
     }
 
+    private suspend fun applyLocalShuffle(stablePlayer: StableDeckPlayer, queue: SourceContentQueue?, refs: List<TrackRef>?,
+        status: Queue.Status?, orderBeforeRequest: List<String>, prefixBeforeRequest: List<String>,
+        ensureCurrent: suspend () -> Unit): Boolean {
+        val currentCount = player.mediaItemCount
+        if (currentCount == 0) return false
+        val additions = if (refs != null) {
+            val existing = (0 until currentCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+            val cached = queue?.loadedTracks().orEmpty().associateBy { TrackRefCodec.mediaId(it.ref) }
+            refs.map(TrackRefCodec::mediaId).filterNot { it in existing }.map { id ->
+                cached[id]?.toMediaMetadata()?.toMediaItem() ?: createPlaceholder(id)
+            }
+        } else if (status != null) {
+            if (status.ids.take(currentCount).map { it.first } !=
+                (0 until currentCount).map { player.getMediaItemAt(it).mediaId }) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            status.ids.drop(currentCount).map { it.second ?: createPlaceholder(it.first) }
+        } else emptyList()
+        val protectedEntries = protectedPlaybackEntries(orderBeforeRequest, prefixBeforeRequest)
+        if (protectedEntries.isEmpty()) return false
+        val entries = ((0 until currentCount).map { player.getMediaItemAt(it) } + additions).toMutableList()
+        val indexByEntry = entries.indices.associateBy { entries[it].queueEntryId }
+        val prefix = protectedEntries.mapNotNull { indexByEntry[it] }
+        val protected = prefix.toSet()
+        val order = prefix + entries.indices.filterNot { it in protected }.shuffled(shuffleRandom)
+        val metadata = entries.filterNot(::needsMetadataHydration).associateBy(MediaItem::mediaId).toMutableMap()
+        val plan = SourceShufflePlan(entries, order.toMutableList(), emptySet(), metadata)
+        val finalOrder = if (queue != null && sources.canBatchTracks(queue.providerId)) {
+            hydrateSourceShufflePlan(plan, orderBeforeRequest, prefixBeforeRequest, preview = true, ensureCurrent = ensureCurrent)
+        } else {
+            ensureCurrent()
+            sourceShuffleOrder(plan, orderBeforeRequest, prefixBeforeRequest)
+        }
+        val applied = stablePlayer.withInternalQueueUpdate { applyServerShuffle(stablePlayer, plan, finalOrder) }
+        if (!applied) return false
+        if (refs != null) {
+            sourceContentPageJob?.cancel()
+            sourceContentPageJob = null
+            queue?.freezePagination()
+        }
+        _queueState.value = QueueState.Playing(queue?.title ?: "播放列表", player.mediaItemCount)
+        return true
+    }
+
+    private suspend fun sourceShuffleIds(queue: SourceContentQueue): List<TrackRef>? {
+        val source = queue.playlistSource ?: return null
+        if (!serverShuffleAllowed()) return null
+        if (!queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+        queue.canonicalShuffleInput()?.let { return it.first }
+        val owner = try { sources.open(queue.providerId) } catch (error: SourceException) {
+            if (error.code == SourceErrorCode.UNSUPPORTED) return null
+            throw error
+        }
+        val refs = owner.canonicalShuffleIds(source.playlistIdentity.orEmpty(), source.libraryCollection)
+        owner.ensureCurrent()
+        if (!queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
+        if (refs == null) return null
+        if (refs.isEmpty() || refs.any { it.providerId != queue.providerId }) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+        return refs.distinct().also { queue.rememberCanonicalShuffleInput(it, owner) }
+    }
+
     /** A remote content queue advances at playback boundaries, one bounded page at a time. */
     private fun loadSourceContentPageIfNeeded() {
         val queue = sourceContentQueue ?: return
-        if (released || isFmMode || localShuffleJob?.isActive == true || sourceContentPageJob?.isActive == true ||
+        if (released || isFmMode || localShuffleJob?.isActive == true || serverShuffleJob?.isActive == true ||
+            sourceContentPageJob?.isActive == true ||
             !queue.hasNextPage() && queue.loadedCount <= player.mediaItemCount) return
         val order = player.playbackOrderIndices()
         val current = order.indexOf(player.currentMediaItemIndex)
@@ -1119,7 +1425,7 @@ class PlaybackQueueManager(
     }
 
 
-    private fun checkAndLoadMetadata(windowSize: Int = 3) {
+    private fun checkAndLoadMetadata(windowSize: Int = 12) {
         scope.launch(Dispatchers.Main) {
             // 基础状态检查 确保线程存活且列表不为空
             if (released || player.mediaItemCount == 0) return@launch

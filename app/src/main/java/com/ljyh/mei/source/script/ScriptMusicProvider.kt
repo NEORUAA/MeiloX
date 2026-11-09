@@ -37,12 +37,13 @@ internal class ScriptMusicProvider(
     FeedCapability, TypedSearchCapability, AlbumCapability, ArtistCapability, PlaylistCapability,
     AccountCapability, LibraryCapability, LikeCapability, CollectionCapability, PlaylistEditCapability,
     SourceFeatureCapability, FeatureContribution, QualityCapability, AccountRevisionCapability, SourceLinkCapability, SourceFeatureContentCapability,
-    AccountScopedLikeCapability, AccountScopedFeatureCapability, SourceCoreEffectCapability, BatchLikeCapability {
+    AccountScopedLikeCapability, AccountScopedFeatureCapability, SourceCoreEffectCapability, BatchLikeCapability, BatchCatalogCapability {
     override val id = manifest.providerId
     override val instanceId = ProviderInstanceId("script:${manifest.id}:default")
     override val displayName = manifest.name
     override val version = "${manifest.version}+$configurationVersion"
     override val capabilities = manifest.sourceCapabilities
+    override val supportsBatchTrackRequests: Boolean get() = "catalog.tracks" in manifest.capabilities
     override val featureRoutes = manifest.featureRoutes
     override val features = manifest.features
     override val linkHosts = manifest.linkHosts
@@ -364,6 +365,25 @@ internal class ScriptMusicProvider(
         val result = invoke("catalog.track", JsonObject().apply { addProperty("trackId", ref.trackId) })
         if (result.isJsonNull) return@validated null
         parseTrack(result.asJsonObject).also { if (it.ref != ref) invalid() }
+    }
+
+    override suspend fun getTracks(refs: List<TrackRef>): List<Track> = validated {
+        refs.forEach(::requireRef)
+        if ("catalog.tracks" !in manifest.capabilities) {
+            return@validated refs.distinct().mapNotNull { getTrack(it) }
+        }
+        val tracks = refs.distinct().chunked(30).flatMap { batch ->
+            val result = invoke("catalog.tracks", JsonObject().apply {
+                add("trackIds", gson.toJsonTree(batch.map { it.trackId }))
+            })
+            if (!result.isJsonArray || result.asJsonArray.size() > batch.size) invalid()
+            val requested = batch.toSet()
+            result.asJsonArray.map { value ->
+                if (!value.isJsonObject) invalid()
+                parseTrack(value.asJsonObject).also { if (it.ref !in requested) invalid() }
+            }.also { values -> if (values.map { it.ref }.distinct().size != values.size) invalid() }
+        }.associateBy { it.ref }
+        refs.mapNotNull(tracks::get)
     }
 
     override suspend fun resolve(ref: TrackRef, requestedQuality: String): AudioResource = validated {
