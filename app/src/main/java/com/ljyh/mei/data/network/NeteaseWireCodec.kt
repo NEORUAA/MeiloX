@@ -3,6 +3,7 @@ package com.ljyh.mei.data.network
 import com.google.gson.JsonParser
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceResponseSizeException
 import com.ljyh.mei.utils.encrypt.decryptEApiBytes
 import com.ljyh.mei.utils.encrypt.encryptEApi
 import com.ljyh.mei.utils.encrypt.rsaEncrypt
@@ -33,7 +34,7 @@ internal object NeteaseWireCodec {
             if (body == null) response else {
                 val contentType = body.contentType()
                 val bytes = body.use {
-                    if (it.contentLength() > MAX_RESPONSE_BYTES || it.source().request(MAX_RESPONSE_BYTES + 1L)) invalid()
+                    if (it.contentLength() > MAX_RESPONSE_BYTES || it.source().request(MAX_RESPONSE_BYTES + 1L)) throw SourceResponseSizeException()
                     it.bytes()
                 }
                 val decoded = if (response.isSuccessful) decodeResponseBytes(bytes, mode) else bytes
@@ -87,10 +88,11 @@ internal object NeteaseWireCodec {
     }
 
     internal fun decodeResponseBytes(bytes: ByteArray, mode: String, limit: Int = MAX_RESPONSE_BYTES): ByteArray {
-        if (limit !in 1..MAX_RESPONSE_BYTES || bytes.size > limit) invalid()
+        if (limit !in 1..MAX_RESPONSE_BYTES) invalid()
+        if (bytes.size > limit) throw SourceResponseSizeException()
         if (mode != "eapi" || bytes.isEmpty() || bytes.firstOrNull { (it.toInt() and 0xff) > 32 } in listOf('{'.code.toByte(), '['.code.toByte())) return bytes
         val decrypted = try { decryptEApiBytes(bytes) } catch (_: Exception) { return bytes }
-        if (decrypted.size > limit) invalid()
+        if (decrypted.size > limit) throw SourceResponseSizeException()
         if (decrypted.size < 2 || decrypted[0] != 0x1f.toByte() || decrypted[1] != 0x8b.toByte()) return decrypted
         return try {
             GZIPInputStream(ByteArrayInputStream(decrypted)).use { input ->
@@ -99,7 +101,7 @@ internal object NeteaseWireCodec {
                 while (true) {
                     val count = input.read(buffer)
                     if (count < 0) break
-                    if (output.size() + count > limit) invalid()
+                    if (output.size() + count > limit) throw SourceResponseSizeException()
                     output.write(buffer, 0, count)
                 }
                 output.toByteArray()

@@ -33,6 +33,189 @@ import okhttp3.FormBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class ScriptPluginPolicyTest {
+    @Test fun typedCatalogCacheSeparatesOwnersAndRejectsRetiredWritesAndAccountRebinds() {
+        val cache = SourceCatalogCache()
+        val first = cache.bind("source-a", "1+7", "account-a")
+        val other = cache.bind("source-b", "1+7", "account-a")
+        val track = Track(TrackRef("source", "opaque/A"), "Private A", emptyList())
+        cache.putTracks(first, listOf(track))
+        assertTrue(cache.tracks(other, listOf(track.ref)).isEmpty())
+        val replacement = cache.bind("source-a", "1+8", "account-a")
+        assertTrue(cache.tracks(replacement, listOf(track.ref)).isEmpty())
+        val current = track.copy(title = "Current owner")
+        cache.putTracks(replacement, listOf(current))
+        for (action in listOf<() -> Unit>(
+            { cache.putTracks(first, listOf(track)) },
+            { cache.rebind(first, "late-account") },
+            { cache.ensureOwner(first) },
+        )) {
+            try { action(); fail("A retired invocation must not mutate or replace the current scope") }
+            catch (_: CancellationException) { }
+        }
+        cache.release(first)
+        assertEquals(current, cache.tracks(replacement, listOf(track.ref))[track.ref])
+        var checks = 0
+        try {
+            cache.putTracks(replacement, listOf(track)) {
+                if (++checks == 2) throw CancellationException("Cancelled before commit")
+            }
+            fail("Cancellation must precede a cache mutation")
+        } catch (_: CancellationException) { }
+        assertEquals(current, cache.tracks(replacement, listOf(track.ref))[track.ref])
+        val sameAccount = cache.rebind(replacement, "account-a")
+        assertNotSame(replacement, sameAccount)
+        assertTrue(cache.tracks(sameAccount, listOf(track.ref)).isEmpty())
+        try { cache.rebind(replacement, "late-account"); fail("Same-account rebinding must retire the old token") }
+        catch (_: CancellationException) { }
+        cache.putTracks(sameAccount, listOf(track))
+        val nextAccount = cache.rebind(sameAccount, "account-b")
+        assertTrue(cache.tracks(nextAccount, listOf(track.ref)).isEmpty())
+        cache.release(nextAccount)
+        try { cache.account(nextAccount); fail("Released scopes must not serve account or catalog data") }
+        catch (_: CancellationException) { }
+    }
+
+    @Test fun typedCatalogCacheBoundsMemoryAndEvictsLeastRecentlyUsedTracksWithoutATtl() {
+        var now = 1_000L
+        val cache = SourceCatalogCache { now }
+        val owner = cache.bind("source", "1", null)
+        val account = SourceAccount(SourceAccountRef(ProviderInstanceId("source"), ProviderAccountId("verified-user")), "User")
+        cache.putAccount(owner, account)
+        val title = "x".repeat((SourceCatalogCache.MAX_BYTES - 16_384) / 8)
+        fun track(id: String) = Track(TrackRef("source", id), title, emptyList())
+        val tracks = listOf("a", "b", "c", "d").map(::track)
+        cache.putTracks(owner, tracks)
+        assertEquals(4, cache.tracks(owner, tracks.map { it.ref }).size)
+        assertEquals(tracks.first(), cache.tracks(owner, listOf(tracks.first().ref))[tracks.first().ref])
+        cache.putTracks(owner, listOf(track("e")))
+        assertFalse(cache.tracks(owner, listOf(TrackRef("source", "b"))).containsKey(TrackRef("source", "b")))
+        assertEquals(tracks.first(), cache.tracks(owner, listOf(tracks.first().ref))[tracks.first().ref])
+        cache.putTracks(owner, listOf(track("huge").copy(title = "雪".repeat(SourceCatalogCache.MAX_BYTES / 2))))
+        assertTrue(cache.tracks(owner, listOf(TrackRef("source", "huge"))).isEmpty())
+        assertEquals(tracks.first(), cache.tracks(owner, listOf(tracks.first().ref))[tracks.first().ref])
+        now += 10 * SourceCatalogCache.PAGE_TTL_MS
+        assertEquals(tracks.first(), cache.tracks(owner, listOf(tracks.first().ref))[tracks.first().ref])
+        assertEquals(true to account, cache.account(owner))
+        assertEquals("verified-user", cache.account(owner).second?.ref?.accountId?.value)
+        assertEquals(8192, SourceCatalogCache.MAX_ENTRIES)
+    }
+
+    @Test fun typedCatalogCachePreservesCompleteIndexesPageIdentityAndVerifiedAccounts() {
+        var now = 1_000L
+        val cache = SourceCatalogCache { now }
+        val owner = cache.bind("source", "1", "account")
+        val artists = mutableListOf(SourceArtist("Artist", ArtistRef("source", "artist/A")))
+        val track = Track(TrackRef("source", "opaque/A"), "A", artists, artworkUrl = "owned:art/A")
+        val second = track.copy(ref = TrackRef("source", "opaque/B"), title = "B")
+        cache.putTracks(owner, listOf(track, second))
+        artists.clear()
+        val refs = listOf(second.ref, TrackRef("source", "missing"), track.ref, track.ref)
+        val hits = cache.tracks(owner, refs)
+        assertEquals(listOf("B", "A", "A"), refs.mapNotNull(hits::get).map { it.title })
+        assertEquals("owned:art/A", hits[track.ref]?.artworkUrl)
+        assertEquals("Artist", hits[track.ref]?.artists?.single()?.name)
+        val playlist = SourcePlaylist(PlaylistRef("source", "playlist"), "Playlist", trackCount = 1534)
+        cache.putSnapshot(owner, SourceCatalogCache.Snapshot(playlist, null))
+        assertNull(cache.snapshot(owner, "playlist")?.ids)
+        cache.putSnapshot(owner, SourceCatalogCache.Snapshot(playlist, emptyList()))
+        assertEquals(emptyList<TrackRef>(), cache.snapshot(owner, "playlist")?.ids)
+        val ids = (1..1534).map { TrackRef("source", "opaque/$it") }.toMutableList()
+        cache.putSnapshot(owner, SourceCatalogCache.Snapshot(playlist, ids, metadataLimit = 5000))
+        ids.clear()
+        assertEquals(1534, cache.snapshot(owner, "playlist")?.ids?.size)
+        assertEquals(5000, cache.snapshot(owner, "playlist")?.metadataLimit)
+        cache.putLikedPlaylist(owner, "playlist")
+        val key = SourceCatalogCache.PageKey("playlist.tracks", "playlist", PageRequest())
+        val page = SourcePage<SourceItem>(listOf(SourceItem.TrackItem(second)), hasMore = true, nextCursor = "next-page")
+        cache.putPage(owner, key, page)
+        assertEquals(page, cache.page(owner, key))
+        assertNull(cache.page(owner, key.copy(page = PageRequest(offset = 30))))
+        assertNull(cache.page(owner, key.copy(identity = "another-playlist")))
+        assertNull(cache.page(owner, key.copy(operation = "library.likedTracks")))
+        assertEquals(false to null, cache.account(owner))
+        cache.putAccount(owner, null)
+        assertEquals(true to null, cache.account(owner))
+        val account = SourceAccount(SourceAccountRef(ProviderInstanceId("source"), ProviderAccountId("account")), "User")
+        cache.putAccount(owner, account)
+        now += SourceCatalogCache.PAGE_TTL_MS
+        assertNull(cache.page(owner, key))
+        assertEquals(1534, cache.snapshot(owner, "playlist")?.ids?.size)
+        assertEquals(true to account, cache.account(owner))
+        cache.putPage(owner, key, page)
+        cache.invalidateCatalog(owner)
+        assertNull(cache.snapshot(owner, "playlist"))
+        assertNull(cache.likedPlaylist(owner))
+        assertNull(cache.page(owner, key))
+        assertEquals(true to account, cache.account(owner))
+        assertEquals(setOf(track.ref, second.ref), cache.tracks(owner, refs).keys)
+        val next = cache.rebind(owner, "next-account")
+        assertEquals(false to null, cache.account(next))
+        assertTrue(cache.tracks(next, refs).isEmpty())
+    }
+
+    @Test fun largeCatalogResultsStayExplicitlyDeclaredAndCannotExpandProtocolState() {
+        assertEquals(32L * 1024 * 1024, ScriptRuntime.MAX_HEAP_BYTES)
+        assertEquals(256 * 1024, ScriptRuntime.MAX_RESULT_BYTES)
+        assertEquals(2 * 1024 * 1024, ScriptRuntime.MAX_CATALOG_RESULT_BYTES)
+        val manifest = PluginManifest("example.source", name = "Source", author = "Author", version = "1", apiVersion = 2,
+            capabilities = setOf("playlist.get", "catalog.tracks", "library.likedTracks", "catalog.track", "feature.invoke"))
+        for (operation in listOf("playlist.get", "catalog.tracks")) {
+            assertEquals(ScriptRuntime.MAX_CATALOG_RESULT_BYTES, scriptResultLimit(manifest, operation, json("{}")))
+            assertEquals(ScriptRuntime.MAX_RESULT_BYTES, scriptResultLimit(manifest.copy(capabilities = emptySet()), operation, json("{}")))
+        }
+        assertEquals(ScriptRuntime.MAX_CATALOG_RESULT_BYTES, scriptResultLimit(manifest, "library.likedTracks", json("{\"metadataOnly\":true}")))
+        for (operation in listOf("library.likedTracks", "catalog.track", "feature.invoke")) {
+            assertEquals(ScriptRuntime.MAX_RESULT_BYTES, scriptResultLimit(manifest, operation, json("{}")))
+        }
+        assertEquals(ScriptRuntime.MAX_RESULT_BYTES, scriptResultLimit(manifest, "library.likedTracks", json("{\"metadataOnly\":\"true\"}")))
+        val large = "x".repeat(600 * 1024)
+        val result = com.google.gson.JsonObject().apply { addProperty("result", large) }.toString()
+        rejects { parseScriptResult(result) }
+        assertEquals(large, parseScriptResult(result, ScriptRuntime.MAX_CATALOG_RESULT_BYTES).asJsonObject["result"].asString)
+        rejects { parseScriptResult(result, ScriptRuntime.MAX_CATALOG_RESULT_BYTES + 1) }
+        rejects { parseScriptResult(com.google.gson.JsonObject().apply {
+            addProperty("result", "雪".repeat(ScriptRuntime.MAX_CATALOG_RESULT_BYTES / 3 + 1))
+        }.toString(), ScriptRuntime.MAX_CATALOG_RESULT_BYTES) }
+        rejects { parseScriptResult("""{"request":{"cache":{"op":"get","key":"catalog"}}}""", ScriptRuntime.MAX_CATALOG_RESULT_BYTES) }
+        rejects { parseScriptResult(com.google.gson.JsonObject().apply {
+            add("request", com.google.gson.JsonObject().apply { addProperty("url", "https://example.com/"); addProperty("body", large) })
+            add("state", json("{}"))
+        }.toString(), ScriptRuntime.MAX_CATALOG_RESULT_BYTES) }
+        rejects { parseScriptResult(com.google.gson.JsonObject().apply {
+            add("result", com.google.gson.JsonObject().apply {
+                add("hostEffect", json("{\"type\":\"source.continue\"}")); addProperty("continuation", large)
+            })
+        }.toString(), ScriptRuntime.MAX_CATALOG_RESULT_BYTES) }
+        rejects { parseScriptResult(com.google.gson.JsonObject().apply {
+            add("request", json("{\"url\":\"https://example.com/\"}")); addProperty("state", "x".repeat(65_537))
+        }.toString(), ScriptRuntime.MAX_CATALOG_RESULT_BYTES) }
+        val declared = json(minimal.replace("\"apiVersion\":1", "\"apiVersion\":2")).apply {
+            add("capabilities", com.google.gson.JsonArray().apply { add("catalog.track"); add("catalog.tracks") })
+            addProperty("catalogBatchSize", 1000)
+            add("discardStorageKeys", com.google.gson.JsonArray().apply { add("profile") })
+        }
+        assertEquals(1000, PluginManifest.parse(declared.toString()).catalogBatchSize)
+        assertEquals(setOf("profile"), PluginManifest.parse(declared.toString()).discardStorageKeys)
+        rejects { PluginManifest.parse(declared.deepCopy().apply { addProperty("catalogBatchSize", 1001) }.toString()) }
+        rejects { PluginManifest.parse(declared.deepCopy().apply {
+            add("sessionKeys", com.google.gson.JsonArray().apply { add("profile") })
+            add("permissions", json("{\"storage\":true}"))
+        }.toString()) }
+    }
+
+    @Test fun onlyOptedInResponseSizeFailuresJoinTheExistingNetworkRecoveryProtocol() {
+        val size = SourceResponseSizeException()
+        assertNull(scriptErrorResponse(size, false))
+        assertEquals("RESPONSE_TOO_LARGE", scriptErrorResponse(size, true)?.get("error")?.asString)
+        for (code in listOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT)) {
+            assertEquals(code.name, scriptErrorResponse(SourceException(code), true)?.get("error")?.asString)
+            assertNull(scriptErrorResponse(SourceException(code), false))
+        }
+        for (code in listOf(SourceErrorCode.INVALID_RESPONSE, SourceErrorCode.PLUGIN, SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) {
+            assertNull(scriptErrorResponse(SourceException(code), true))
+        }
+    }
+
     @Test fun queuedScriptOperationsKeepTheirExecutionBudgetAndCanBeCancelledWhileWaiting() = runTest {
         val operations = Mutex()
         var cancelledOperationStarted = false
@@ -436,7 +619,10 @@ class ScriptPluginPolicyTest {
         try {
             NeteaseWireCodec.decodeResponseBytes(bytes("fba5b125f70d46b164ed584a21ec3e7af7176b4ac933f1b36f5cbd8fc6278d8b8906943155b096aab0b9b60d1ec86980"), "eapi", limit = 1024)
             fail("An inflated response must remain bounded")
-        } catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        } catch (error: SourceException) {
+            assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code)
+            assertTrue(error is SourceResponseSizeException)
+        }
         val request = Request.Builder().url("https://source.example/").post("{}".toRequestBody()).build()
         for (arguments in listOf(mapOf("mode" to "eapi"), mapOf("mode" to "weapi"),
             mapOf("mode" to "eapi", "signingPath" to "/path?query=forbidden"),
@@ -765,6 +951,10 @@ class ScriptPluginPolicyTest {
         assertEquals("value", first["config"].asJsonObject["configuration"].asString)
         assertEquals(0, first["storage"].asJsonObject.size())
         assertEquals(0, next["config"].asJsonObject.size())
+        assertEquals(0, first["account"].asJsonObject.size())
+        val verified = ScriptRuntime.newContext(manifest, emptyMap(), mapOf("userId" to "unverified"), verifiedUserId = "verified")
+        assertEquals("verified", verified["account"].asJsonObject["userId"].asString)
+        assertFalse(verified.has("cache"))
         assertEquals(1, ScriptRuntime.newContext(PluginManifest.parse(minimal), emptyMap(), emptyMap())["apiVersion"].asInt)
     }
 

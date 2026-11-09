@@ -15,6 +15,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceResponseSizeException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,6 +37,7 @@ data class ScriptInvocation(val result: JsonElement, val storage: Map<String, St
 /** No app objects or JavaScript interfaces are bound into this isolated V8 process. */
 @Singleton
 class ScriptRuntime @Inject constructor(@ApplicationContext private val context: Context) {
+    internal val catalogCache = SourceCatalogCache()
     // Android permits a single sandbox process. A fresh process per invocation also bounds
     // malicious global state and lets cancellation terminate CPU loops unconditionally.
     val supported: Boolean get() = JavaScriptSandbox.isSupported()
@@ -53,6 +55,13 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         request = { network.request(it, ensureCurrent) }, ensureCurrent = ensureCurrent)
 
     internal suspend fun invoke(
+        script: String, manifest: PluginManifest, operation: String, params: JsonObject,
+        configuration: Map<String, String>, storage: Map<String, String>, network: ScriptNetworkPolicy,
+        verifiedUserId: String?, ensureCurrent: () -> Unit = {},
+    ): ScriptInvocation = invoke(script, manifest, operation, params, configuration, storage,
+        request = { network.request(it, ensureCurrent) }, verifiedUserId = verifiedUserId, ensureCurrent = ensureCurrent)
+
+    internal suspend fun invoke(
         script: String,
         manifest: PluginManifest,
         operation: String,
@@ -60,10 +69,12 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         configuration: Map<String, String>,
         storage: Map<String, String>,
         request: suspend (JsonObject) -> JsonObject,
+        verifiedUserId: String? = null,
         ensureCurrent: () -> Unit = {},
     ): ScriptInvocation = execution.withLock {
         ensureCurrent()
         if (!supported) throw SourceException(SourceErrorCode.UNSUPPORTED, "Update Android System WebView to run sources")
+        val resultLimit = scriptResultLimit(manifest, operation, params)
         var phase = ScriptRuntimePhase.CONNECTION
         var requestSent = false
         val memoryLimited = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -77,8 +88,8 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                         throw SourceException(SourceErrorCode.UNSUPPORTED, "Source resource limits are unavailable on this device")
                     }
                     val settings = IsolateStartupParameters().apply {
-                        maxHeapSizeBytes = 16L * 1024 * 1024
-                        maxEvaluationReturnSizeBytes = MAX_RESULT_BYTES
+                        maxHeapSizeBytes = MAX_HEAP_BYTES
+                        maxEvaluationReturnSizeBytes = resultLimit
                     }
                     sandbox.createIsolate(settings).use { isolate ->
                         isolate.addOnTerminatedCallback(java.util.concurrent.Executor { it.run() }) {
@@ -93,7 +104,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                         var state: JsonElement? = null
                         repeat(5) { hop ->
                             ensureCurrent()
-                            val pluginContext = newContext(manifest, configuration, storage, entropy).apply {
+                            val pluginContext = newContext(manifest, configuration, storage, entropy, verifiedUserId).apply {
                                 add("device", JsonObject().apply {
                                     addProperty("installationId", ScriptPlatformSdk.installationDeviceId(context, "script:${manifest.id}:default"))
                                     addProperty("resolution", context.resources.displayMetrics.let { "${it.widthPixels}x${it.heightPixels}" })
@@ -123,9 +134,8 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                             phase = ScriptRuntimePhase.OPERATION
                             val raw = withTimeout(3_000) { isolate.evaluateJavaScriptAsync(invocation).await() }
                             ensureCurrent()
-                            if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
                             phase = ScriptRuntimePhase.RESULT
-                            val result = JsonParser.parseString(raw)
+                            val result = parseScriptResult(raw, resultLimit)
                             val envelope = result.takeIf(JsonElement::isJsonObject)?.asJsonObject
                             if (envelope?.has("request") == true) {
                                 if (hop == 4) throw SourceException(SourceErrorCode.PLUGIN, "Source request limit exceeded")
@@ -140,9 +150,9 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                                 response = try { request(frame) }
                                 catch (cancelled: CancellationException) { throw cancelled }
                                 catch (error: SourceException) {
-                                    if (!recovery || error.code !in setOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT)) throw error
+                                    val recovered = scriptErrorResponse(error, recovery) ?: throw error
                                     ensureCurrent()
-                                    JsonObject().apply { addProperty("status", 0); addProperty("body", ""); addProperty("error", error.code.name) }
+                                    recovered
                                 }
                                 ensureCurrent()
                                 state = envelope.get("state")
@@ -173,6 +183,11 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
         } catch (error: SourceException) { ensureCurrent(); throw error
         } catch (error: Exception) {
             ensureCurrent()
+            var cause: Throwable = error
+            repeat(8) { (cause as? java.util.concurrent.ExecutionException)?.cause?.let { cause = it } }
+            if (resultLimit == MAX_CATALOG_RESULT_BYTES && cause is EvaluationResultSizeLimitExceededException) {
+                throw SourceResponseSizeException()
+            }
             val failure = scriptRuntimeFailure(error, phase, memoryLimited.get(), requestSent)
             if (failure.code in setOf(SourceErrorCode.UNAVAILABLE, SourceErrorCode.PLUGIN, SourceErrorCode.INVALID_RESPONSE)) {
                 // Engine exception messages may contain script data. Record fixed metadata only.
@@ -184,6 +199,8 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
     }
 
     companion object {
+        const val MAX_HEAP_BYTES = 32L * 1024 * 1024
+        const val MAX_CATALOG_RESULT_BYTES = 2 * 1024 * 1024
         const val MAX_RESULT_BYTES = 256 * 1024
         const val SECURE_RANDOM_BYTES = 256
         private val execution = Mutex()
@@ -195,8 +212,10 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
             configuration: Map<String, String>,
             storage: Map<String, String>,
             entropy: SecureRandom = SecureRandom(),
+            verifiedUserId: String? = null,
         ): JsonObject = JsonObject().apply {
             val gson = Gson()
+            add("account", JsonObject().apply { verifiedUserId?.let { addProperty("userId", it) } })
             addProperty("apiVersion", manifest.apiVersion)
             add("config", gson.toJsonTree(configuration))
             add("storage", gson.toJsonTree(storage.takeIf { manifest.permissions.storage }.orEmpty()))
@@ -204,6 +223,56 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
                 ByteArray(SECURE_RANDOM_BYTES).also(entropy::nextBytes)))
         }
     }
+}
+
+internal fun scriptResultLimit(manifest: PluginManifest, operation: String, parameters: JsonObject): Int {
+    val bulk = operation in manifest.capabilities && (operation == "playlist.get" || operation == "catalog.tracks" ||
+        operation == "library.likedTracks" && parameters.get("metadataOnly")?.let {
+            it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean
+        } == true)
+    return if (bulk) ScriptRuntime.MAX_CATALOG_RESULT_BYTES else ScriptRuntime.MAX_RESULT_BYTES
+}
+
+internal fun parseScriptResult(raw: String, maximumBytes: Int = ScriptRuntime.MAX_RESULT_BYTES): JsonElement {
+    if (maximumBytes !in setOf(ScriptRuntime.MAX_RESULT_BYTES, ScriptRuntime.MAX_CATALOG_RESULT_BYTES)) {
+        throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    }
+    if (raw.toByteArray(Charsets.UTF_8).size > maximumBytes) {
+        if (maximumBytes == ScriptRuntime.MAX_CATALOG_RESULT_BYTES) throw SourceResponseSizeException()
+        throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    }
+    val result = JsonParser.parseString(raw)
+    val envelope = result.takeIf(JsonElement::isJsonObject)?.asJsonObject
+    val returned = envelope?.get("result") ?: result
+    val hostEffect = returned.takeIf(JsonElement::isJsonObject)?.asJsonObject?.has("hostEffect") == true
+    if ((envelope?.has("request") == true || hostEffect) && raw.toByteArray(Charsets.UTF_8).size > ScriptRuntime.MAX_RESULT_BYTES) {
+        throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    }
+    if (envelope?.get("request")?.takeIf(JsonElement::isJsonObject)
+            ?.asJsonObject?.has("cache") == true) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    for (key in listOf("state", "storage")) envelope?.get(key)?.let { state ->
+        val pending = ArrayDeque<Pair<JsonElement, Int>>()
+        pending.add(state to 0)
+        var nodes = 0
+        while (pending.isNotEmpty()) {
+            val (value, depth) = pending.removeLast()
+            if (depth > 64 || ++nodes > 65_536) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            if (value.isJsonObject) value.asJsonObject.entrySet().forEach { pending.add(it.value to depth + 1) }
+            else if (value.isJsonArray) value.asJsonArray.forEach { pending.add(it to depth + 1) }
+        }
+        if (state.toString().toByteArray(Charsets.UTF_8).size > 65_536) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+    }
+    return result
+}
+
+internal fun scriptErrorResponse(error: SourceException, allowed: Boolean): JsonObject? {
+    if (!allowed) return null
+    val code = when {
+        error is SourceResponseSizeException -> "RESPONSE_TOO_LARGE"
+        error.code in setOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT) -> error.code.name
+        else -> return null
+    }
+    return JsonObject().apply { addProperty("status", 0); addProperty("body", ""); addProperty("error", code) }
 }
 
 internal enum class ScriptRuntimePhase { CONNECTION, INITIALIZATION, SCRIPT, OPERATION, RESULT, REQUEST }

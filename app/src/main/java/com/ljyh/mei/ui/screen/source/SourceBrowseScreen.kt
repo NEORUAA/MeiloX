@@ -917,7 +917,7 @@ fun SourceAccountScreen(
     LaunchedEffect(providerId) { viewModel.open(SourceContentRequest.Account(providerId)) }
     LaunchedEffect(providerId, state.providerId, state.loading, state.error, account) {
         if (state.providerId == providerId && !state.loading && state.error == null &&
-            profileViewModel.state.value.providerId == providerId) profileViewModel.refresh()
+            profileViewModel.state.value.providerId == providerId) profileViewModel.refresh(force = false)
     }
 
     MeiloXPinnedListPage(

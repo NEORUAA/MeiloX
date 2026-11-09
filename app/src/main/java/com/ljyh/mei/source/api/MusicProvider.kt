@@ -10,6 +10,10 @@ enum class SourceErrorCode { AUTH_REQUIRED, AUTH_EXPIRED, UNAVAILABLE, NOT_FOUND
 open class SourceException(val code: SourceErrorCode, message: String = code.name,
     val outcomeUnknown: Boolean = false) : IOException(message)
 
+internal class SourceResponseSizeException : SourceException(
+    SourceErrorCode.INVALID_RESPONSE, "Source response exceeded its size limit",
+)
+
 data class SourceArtist(val name: String, val ref: ArtistRef? = null)
 data class SourceAlbum(val title: String, val ref: AlbumRef? = null)
 data class Track(
@@ -80,4 +84,11 @@ data class PlaybackResolution(
 interface BatchCatalogCapability {
     val supportsBatchTrackRequests: Boolean get() = true
     suspend fun getTracks(refs: List<TrackRef>): List<Track>
+}
+
+data class SourceTrackIndex(val playlistId: String, val ids: List<TrackRef>)
+
+/** Complete source identities are independent of metadata pagination. */
+interface CatalogIndexCapability {
+    suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection? = null): SourceTrackIndex?
 }

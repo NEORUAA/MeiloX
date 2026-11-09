@@ -61,6 +61,11 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
         // Complete shuffle IDs and playback history are inputs, not a larger response/effect allowance.
         val completeShuffle = coreOperation == null && feature == "discovery" && action == "officialShuffle"
         val inputLimit = if (completeShuffle) MAX_SHUFFLE_INPUT_BYTES else MAX_INPUT_BYTES
+        val completeCatalog = coreOperation in setOf("playlist.get", "catalog.tracks") ||
+            coreOperation == "library.likedTracks" && parameters.get("metadataOnly")?.let {
+                it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean
+            } == true
+        val outputLimit = if (completeCatalog) MAX_CATALOG_RESULT_BYTES else MAX_INPUT_BYTES
         val original = boundedCopy(parameters, inputLimit).asJsonObject
         val executionContext = currentCoroutineContext()
         executionContext.ensureActive()
@@ -140,7 +145,7 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
                 if (envelope?.has("hostEffect") != true) {
                     ensureOwner(checkAccount = !allowSessionChange)
                     if (envelope?.has("continuation") == true) invalid()
-                    return boundedCopy(response, MAX_INPUT_BYTES)
+                    return boundedCopy(response, outputLimit)
                 }
                 ensureOwner()
                 if (handled++ >= MAX_EFFECTS) throw SourceException(SourceErrorCode.PLUGIN, "Source host-effect limit exceeded")
@@ -292,5 +297,6 @@ class SourceFeatureExecutor @Inject constructor(private val router: SourceRouter
         private const val MAX_RESULT_BYTES = 128 * 1024
         private const val MAX_INPUT_BYTES = 256 * 1024
         private const val MAX_SHUFFLE_INPUT_BYTES = 2 * 1024 * 1024
+        private const val MAX_CATALOG_RESULT_BYTES = 2 * 1024 * 1024
     }
 }

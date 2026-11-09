@@ -28,6 +28,7 @@ import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.utils.dataStore
 import com.ljyh.mei.source.api.AudioResource
 import com.ljyh.mei.source.api.AccountCapability
+import com.ljyh.mei.source.api.CatalogIndexCapability
 import com.ljyh.mei.source.api.LibraryCollection
 import com.ljyh.mei.source.api.PlaylistRef
 import com.ljyh.mei.source.api.SourceItem
@@ -50,6 +51,7 @@ import com.ljyh.mei.playback.PlaybackArtistSnapshot
 import com.ljyh.mei.playback.PlaybackItemSnapshot
 import com.ljyh.mei.playback.PlaybackPersistence
 import com.ljyh.mei.playback.PlaybackSnapshot
+import com.ljyh.mei.playback.OfficialMobileShuffle
 import com.ljyh.mei.source.api.AlbumRef
 import com.ljyh.mei.source.api.ArtistRef
 import com.ljyh.mei.source.api.TrackRef
@@ -72,7 +74,7 @@ class SourceCompatibilityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    @Test fun installedNeteaseMetadataWindowUsesOneBatchRequest(): Unit = runBlocking {
+    @Test fun installedNeteaseMetadataWindowUsesAtMostOneBatchRequest(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("neteaseBatchCatalogLive") == "true")
         val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
         withTimeout(20_000) { router.registry.awaitInitialized() }
@@ -107,11 +109,109 @@ class SourceCompatibilityInstrumentedTest {
             instrumentation.sendStatus(0, Bundle().apply { putString("stream",
                 "Metadata window requested=${refs.size} returned=${tracks.size} detailHttp=${requests.get()} elapsedMs=$elapsed\n") })
             assertEquals("The visible metadata batch must return every requested track", refs.toSet(), tracks.map { it.ref }.toSet())
-            assertEquals("The installed script adapter must use one metadata HTTP request", 1, requests.get())
+            assertTrue("Uncached metadata must use at most one batch HTTP request", requests.get() in 0..1)
         } finally {
             clientField.set(policy, original)
             assertTrue("The metadata check must preserve source configuration", configuration == provider.platformConfiguration())
             assertTrue("The metadata check must preserve account revision", revision == provider.accountRevision.first())
+        }
+    }
+
+    @Test fun installedNeteaseLibraryReusesVerifiedAccount(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("neteaseAccountReuseLive") == "true")
+        val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
+        withTimeout(20_000) { router.registry.awaitInitialized() }
+        val provider = router.registry.requireProvider(ProviderIds.NETEASE) as ScriptMusicProvider
+        val configuration = provider.platformConfiguration().toMap()
+        val networkField = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }
+        val policy = networkField.get(provider) as ScriptNetworkPolicy
+        val clientField = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = clientField.get(policy) as OkHttpClient
+        val requests = AtomicInteger()
+        try {
+            clientField.set(policy, original.newBuilder().addInterceptor { chain ->
+                if (chain.request().url.encodedPath.endsWith("/nuser/account/get")) requests.incrementAndGet()
+                chain.proceed(chain.request())
+            }.build())
+            val account = withTimeout(30_000) { router.account(ProviderIds.NETEASE, refresh = true) }
+            assertNotNull("The reuse check requires a verified account", account)
+            val initialReads = requests.get()
+            val start = android.os.SystemClock.elapsedRealtime()
+            withTimeout(90_000) {
+                repeat(3) {
+                    router.library(ProviderIds.NETEASE, LibraryCollection.LIKED_TRACKS, PageRequest(limit = 30))
+                    router.library(ProviderIds.NETEASE, LibraryCollection.CREATED_PLAYLISTS, PageRequest(limit = 30))
+                }
+            }
+            val repeatedReads = requests.get() - initialReads
+            val elapsed = android.os.SystemClock.elapsedRealtime() - start
+            val beforeRefresh = requests.get()
+            val refreshed = withTimeout(30_000) { router.account(ProviderIds.NETEASE, refresh = true) }
+            val refreshReads = requests.get() - beforeRefresh
+            instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                "Library account pages=6 initialHttp=$initialReads repeatedHttp=$repeatedReads explicitRefreshHttp=$refreshReads elapsedMs=$elapsed\n") })
+            assertEquals("An explicit account refresh must retain the account", account?.ref, refreshed?.ref)
+            assertEquals("Read-only library navigation must reuse the verified session identity", 0, repeatedReads)
+            assertTrue("An explicit refresh must still contact the account endpoint", refreshReads > 0)
+        } finally {
+            clientField.set(policy, original)
+            assertEquals("The reuse check must preserve source configuration", configuration, provider.platformConfiguration())
+        }
+    }
+
+    @Test fun installedNeteasePlaylistPrimesMetadataBeforeShuffle(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("neteaseMetadataWarmupLive") == "true")
+        val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
+        withTimeout(20_000) { router.registry.awaitInitialized() }
+        val provider = router.registry.requireProvider(ProviderIds.NETEASE) as ScriptMusicProvider
+        assertNotNull(withTimeout(20_000) { (provider as AccountCapability).account() })
+        val configuration = provider.platformConfiguration().toMap()
+        val revision = provider.accountRevision.first()
+        val refs = listOf("461301454", "22808850", "3386983735", "1847812119", "1413795919", "830949", "29366904", "744722")
+            .map { TrackRef(ProviderIds.NETEASE, it) }
+        val networkField = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }
+        val policy = networkField.get(provider) as ScriptNetworkPolicy
+        val clientField = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = clientField.get(policy) as OkHttpClient
+        val requests = AtomicInteger()
+        try {
+            clientField.set(policy, original.newBuilder().addInterceptor { chain ->
+                requests.incrementAndGet()
+                chain.proceed(chain.request())
+            }.build())
+            val playlist = PlaylistRef(ProviderIds.NETEASE, "945595972")
+            withTimeout(60_000) {
+                router.playlist(playlist)
+                val page = router.playlistTracks(playlist, PageRequest(limit = 30))
+                assertEquals("Warmup must retain the original visible page", 30, page.items.size)
+                assertTrue("The metadata check must cover tracks beyond page one", refs.none { ref -> page.items.any { it.ref == ref } })
+            }
+            val before = requests.get()
+            val start = android.os.SystemClock.elapsedRealtime()
+            val tracks = withTimeout(10_000) { router.getTracks(refs) }
+            val elapsed = android.os.SystemClock.elapsedRealtime() - start
+            val lookupRequests = requests.get() - before
+            instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                "Warm playlist requested=${refs.size} returned=${tracks.size} lookupHttp=$lookupRequests elapsedMs=$elapsed\n") })
+            assertEquals("Opening the playlist must prime metadata beyond its visible page", refs.toSet(), tracks.map { it.ref }.toSet())
+            assertEquals("A warmed shuffle window must use host metadata without HTTP", 0, lookupRequests)
+            val beforeIndex = requests.get()
+            val complete = requireNotNull((provider as CatalogIndexCapability).completeTrackIds(playlist.playlistId)).ids
+            assertEquals("A warmed complete index must be host-owned and require no HTTP", beforeIndex, requests.get())
+            val beforeComplete = requests.get()
+            val completeStarted = android.os.SystemClock.elapsedRealtime()
+            val completeTracks = withTimeout(20_000) { router.getTracks(complete) }
+            val completeMs = android.os.SystemClock.elapsedRealtime() - completeStarted
+            val completeHttp = requests.get() - beforeComplete
+            instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                "Warm complete playlist requested=${complete.size} returned=${completeTracks.size} lookupHttp=$completeHttp elapsedMs=$completeMs\n") })
+            assertTrue("The live playlist must cover the complete collection", complete.size > 30)
+            assertEquals("Warm metadata must cover every playlist identity", complete.toSet(), completeTracks.map { it.ref }.toSet())
+            assertEquals("Complete warm metadata must not refetch song details", 0, completeHttp)
+        } finally {
+            clientField.set(policy, original)
+            assertEquals("Warmup must preserve source configuration", configuration, provider.platformConfiguration())
+            assertEquals("Warmup must preserve the account revision", revision, provider.accountRevision.first())
         }
     }
 
@@ -272,35 +372,32 @@ class SourceCompatibilityInstrumentedTest {
                     PageRequest(limit = 30)).items.mapNotNull { (it as? SourceItem.TrackItem)?.track }
                 assertTrue("The live shuffle check requires multiple songs", first.size >= 2)
                 val seed = first.first().ref.trackId
-                val input = JsonObject().apply {
-                    if (playlistId == null) addProperty("collection", "LIKED_TRACKS")
-                    addProperty("playlistId", playlistId.orEmpty())
-                    addProperty("songId", seed)
-                }
                 val started = android.os.SystemClock.elapsedRealtime()
-                val identities = executor.execute(ProviderIds.NETEASE, "discovery", "shuffleInput", input,
-                    expectedProvider = provider, expectedAccountRevision = revision).asJsonObject
-                    .getAsJsonArray("ids")
+                val identities = requireNotNull((provider as CatalogIndexCapability).completeTrackIds(
+                    playlistId.orEmpty(), if (playlistId == null) LibraryCollection.LIKED_TRACKS else null)).ids
                 val identityMs = android.os.SystemClock.elapsedRealtime() - started
-                val canonical = identities.map { it.asString }
+                val canonical = identities.map { it.trackId }
                 assertEquals("Full shuffle identities must stay unique", canonical.size, canonical.toSet().size)
                 assertTrue("Full identities must retain the visible page", canonical.containsAll(first.map { it.ref.trackId }))
                 if (playlistId != null) assertTrue("The large-playlist check must include songs beyond page one",
                     canonical.size > first.size)
+                val policyStarted = android.os.SystemClock.elapsedRealtime()
+                val policy = executor.execute(ProviderIds.NETEASE, "discovery", "shufflePolicy",
+                    expectedProvider = provider, expectedAccountRevision = revision).asJsonObject
+                fun policyResponse(key: String) = policy.get(key)?.takeUnless { it.isJsonNull }?.asJsonObject
+                val state = OfficialMobileShuffle.resolve(policyResponse("parent"), policyResponse("child"))
+                val policyMs = android.os.SystemClock.elapsedRealtime() - policyStarted
                 val shuffleStarted = android.os.SystemClock.elapsedRealtime()
-                val response = executor.execute(ProviderIds.NETEASE, "discovery", "officialShuffle", input.apply {
-                    add("ids", identities)
-                    addProperty("playingId", seed)
-                    addProperty("timeBias", 0)
-                    addProperty("styleBias", 0)
-                    add("history", com.google.gson.JsonArray())
-                }, expectedProvider = provider, expectedAccountRevision = revision).asJsonObject
+                val order = OfficialMobileShuffle.shuffle(canonical, seed, state)
                 val shuffleMs = android.os.SystemClock.elapsedRealtime() - shuffleStarted
-                val order = response.getAsJsonArray("order").map { it.asString }
                 assertEquals("Shuffle must return the complete identity set", canonical.toSet(), order.toSet())
                 assertEquals("Shuffle must not duplicate identities", canonical.size, order.size)
+                assertEquals("The current song must remain first", seed, order.first())
+                assertNotEquals("Shuffle must change the canonical order", canonical, order)
+                assertNotEquals("Another host shuffle must produce a fresh order", order,
+                    OfficialMobileShuffle.shuffle(canonical, seed, state))
                 instrumentation.sendStatus(0, Bundle().apply {
-                    putString("stream", "Shuffle count=${order.size} identityMs=$identityMs shuffleMs=$shuffleMs canonicalHead=${canonical.take(10)} shuffledHead=${order.take(10)}\n")
+                    putString("stream", "Shuffle count=${order.size} identityMs=$identityMs policyMs=$policyMs nativeShuffleMs=$shuffleMs canonicalHead=${canonical.take(10)} shuffledHead=${order.take(10)}\n")
                 })
             }
         } finally {

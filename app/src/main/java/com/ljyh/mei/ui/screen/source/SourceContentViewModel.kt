@@ -150,7 +150,7 @@ class SourceContentViewModel internal constructor(
                         mutableState.value = if (sameOwner) previous.copy(loading = true, refreshing = refreshing, error = null,
                             albumsLoading = false, albumsError = null) else SourceContentState(providerId = id,
                             providerVersion = provider?.version.orEmpty(), accountRevision = accountRevision,
-                            categories = retainedCategories, loading = true,
+                            account = previous.account.takeIf { sameSource }, categories = retainedCategories, loading = true,
                             refreshing = refreshing)
                         displayedRequest = requested
                         displayedProvider = provider
@@ -160,14 +160,14 @@ class SourceContentViewModel internal constructor(
                             currentCoroutineContext().ensureActive()
                             if (token != generation || provider == null || !sameOwner(provider, state.value)) throw CancellationException("Home cache owner changed")
                         }
-                        val cached = if (home && !explicitRefresh && owner != null && provider != null)
+                        val cached = if (home && !refreshing && owner != null && provider != null)
                             homeCache?.read(owner, provider, cacheGuard) else null
                         if (cached != null) {
                             mutableState.value = state.value.copy(sections = cached.sections, categories = cached.categories, loading = false,
                                 hasMore = false, nextCursor = null, error = null)
                             return@account
                         }
-                        load(requested, id, token, append = false, refresh = home && explicitRefresh)
+                        load(requested, id, token, append = false, refresh = refreshing, forceAccountRefresh = refreshing)
                         // Home originally publishes the complete recommendation feed, including later modules.
                         if (requested is SourceContentRequest.Feed && requested.kind == FeedKind.HOME) {
                             var pages = 1
@@ -221,7 +221,8 @@ class SourceContentViewModel internal constructor(
         pagination = viewModelScope.launch { load(requested, current.providerId, token, append = true) }
     }
 
-    private suspend fun load(requested: SourceContentRequest, id: String, token: Long, append: Boolean, refresh: Boolean = false) {
+    private suspend fun load(requested: SourceContentRequest, id: String, token: Long, append: Boolean, refresh: Boolean = false,
+        forceAccountRefresh: Boolean = false) {
         val previous = mutableState.value
         val page = PageRequest(if (append) previous.nextOffset else 0, 30, if (append) previous.nextCursor else null, refresh = refresh && !append)
         var received = 0
@@ -240,7 +241,10 @@ class SourceContentViewModel internal constructor(
                 }
                 is SourceContentRequest.Library -> {
                     val account = if (append) previous.account else if (SourceCapability.ACCOUNT in router.registry.requireProvider(id).capabilities)
-                        router.account(id, refresh = refresh) else null
+                        router.account(id, refresh = forceAccountRefresh) else null
+                    currentCoroutineContext().ensureActive()
+                    if (token != generation || !sameOwner(boundProvider, previous)) return
+                    mutableState.value = state.value.copy(account = account)
                     val collection = router.library(id, requested.collection, page)
                     received = collection.items.size
                     incomingRefs = collection.items.map { it.ref }
@@ -249,8 +253,9 @@ class SourceContentViewModel internal constructor(
                 }
                 is SourceContentRequest.Detail -> when (val ref = requested.ref) {
                     is PlaylistRef -> {
+                        val refreshedTracks = if (page.refresh && !append) router.playlistTracks(ref, page) else null
                         val info = if (append) (previous.detail as? SourceItem.PlaylistItem)?.playlist ?: router.playlist(ref) else router.playlist(ref)
-                        val tracks = router.playlistTracks(ref, page)
+                        val tracks = refreshedTracks ?: router.playlistTracks(ref, page)
                         received = tracks.items.size
                         incomingRefs = tracks.items.map { it.ref }
                         previous.copy(title = info.title, artworkUrl = info.artworkUrl, description = info.description,
@@ -291,7 +296,7 @@ class SourceContentViewModel internal constructor(
                     previous.copy(title = info.name, artworkUrl = info.artworkUrl, description = info.description,
                         detail = SourceItem.ArtistItem(info), hasMore = false, nextCursor = null)
                 }
-                is SourceContentRequest.Account -> previous.copy(account = router.account(id, refresh = refresh))
+                is SourceContentRequest.Account -> previous.copy(account = router.account(id, refresh = forceAccountRefresh))
                 is SourceContentRequest.Editor -> {
                     val editor = boundProvider as? PlaylistEditCapability
                     if (SourceCapability.PLAYLIST_EDIT !in boundProvider.capabilities ||

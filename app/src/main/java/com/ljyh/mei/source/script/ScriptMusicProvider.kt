@@ -15,6 +15,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 
 /** Only capability adapters and JSON values cross the isolated runtime boundary. */
 internal class ScriptMusicProvider(
@@ -37,7 +39,7 @@ internal class ScriptMusicProvider(
     FeedCapability, TypedSearchCapability, AlbumCapability, ArtistCapability, PlaylistCapability,
     AccountCapability, LibraryCapability, LikeCapability, CollectionCapability, PlaylistEditCapability,
     SourceFeatureCapability, FeatureContribution, QualityCapability, AccountRevisionCapability, SourceLinkCapability, SourceFeatureContentCapability,
-    AccountScopedLikeCapability, AccountScopedFeatureCapability, SourceCoreEffectCapability, BatchLikeCapability, BatchCatalogCapability {
+    AccountScopedLikeCapability, AccountScopedFeatureCapability, SourceCoreEffectCapability, BatchLikeCapability, BatchCatalogCapability, CatalogIndexCapability {
     override val id = manifest.providerId
     override val instanceId = ProviderInstanceId("script:${manifest.id}:default")
     override val displayName = manifest.name
@@ -48,6 +50,9 @@ internal class ScriptMusicProvider(
     override val features = manifest.features
     override val linkHosts = manifest.linkHosts
     private val sessionRevision = MutableStateFlow(sessionFingerprint(storage()))
+    private val catalog = runtime.catalogCache
+    @Volatile private var catalogOwner = catalog.bind(instanceId.value, version, sessionRevision.value)
+    private val catalogGeneration = java.util.concurrent.atomic.AtomicLong()
     override val accountRevision = sessionRevision.asStateFlow()
     override val feedKinds = FeedKind.entries.filter { it.operation in manifest.capabilities }.toSet()
     override val searchTypes = ContentType.entries.filter { it.wireName in manifest.searchTypes }.toSet()
@@ -59,9 +64,11 @@ internal class ScriptMusicProvider(
     override val canReadCollections get() = "collection.saved" in manifest.capabilities
     override val canWriteCollections get() = "collection.save" in manifest.capabilities
     @Volatile var enabled = enabled
+        set(value) { field = value; if (!value) catalog.release(catalogOwner) }
     @Volatile var failed = false
+        set(value) { field = value; if (value) catalog.release(catalogOwner) }
     override val status: SourceStatus get() = when {
-        !enabled || !isCurrent() -> SourceStatus.DISABLED
+        !enabled || !isCurrent() -> SourceStatus.DISABLED.also { catalog.release(catalogOwner) }
         !manifest.supported || !runtime.supported -> SourceStatus.INCOMPATIBLE
         failed -> SourceStatus.FAILED
         manifest.config.any { it.required && configurationSnapshot[it.key].isNullOrBlank() } -> SourceStatus.NEEDS_CONFIGURATION
@@ -69,14 +76,51 @@ internal class ScriptMusicProvider(
     }
     internal fun platformConfiguration(): Map<String, String> {
         ensureCurrent()
+        val verified = catalog.account(catalogOwner, ::ensureCurrent).second?.ref?.accountId?.value
         return config() + storage().filterKeys {
-            it in setOf("cookie", "sessionType", "ursAppId", "deviceId", "sDeviceId", "musicA", "csrf", "userId")
-        } + ("sdkInstance" to instanceId.value)
+            it in setOf("cookie", "sessionType", "ursAppId", "deviceId", "sDeviceId", "musicA", "csrf")
+        } + ("sdkInstance" to instanceId.value) + if (verified == null) emptyMap() else mapOf("userId" to verified)
     }
     private val network = ScriptNetworkPolicy(manifest.permissions.network, manifest.permissions.nativeSdks, ::platformConfiguration)
     private val operations = Mutex()
     private val gson = Gson()
     private val parser = ScriptContentParser(id, manifest.apiVersion, playlistEditActions, features, featureRoutes) { featureArtwork(it) }
+
+    private class CatalogRead(val provider: ScriptMusicProvider, var owner: SourceCatalogCache.Owner, var generation: Long) :
+        AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<CatalogRead>
+    }
+    private class InvocationOwner(val provider: ScriptMusicProvider, var owner: SourceCatalogCache.Owner) :
+        AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<InvocationOwner>
+    }
+
+    private fun ensureCatalog(read: CatalogRead) {
+        ensureCurrent()
+        catalog.ensureOwner(read.owner) {
+            if (catalogOwner !== read.owner || sessionRevision.value != read.owner.account || catalogGeneration.get() != read.generation) {
+                throw CancellationException("Source catalog owner changed")
+            }
+        }
+    }
+
+    private suspend fun <T> catalogRead(block: suspend (CatalogRead) -> T): T {
+        val inherited = currentCoroutineContext()[CatalogRead]?.takeIf { it.provider === this }
+        if (inherited != null) {
+            ensureCatalog(inherited)
+            return block(inherited).also { ensureCatalog(inherited) }
+        }
+        val read = CatalogRead(this, catalogOwner, catalogGeneration.get())
+        return withContext(read) { ensureCatalog(read); block(read).also { ensureCatalog(read) } }
+    }
+
+    private fun invalidateCatalog(read: CatalogRead? = null) {
+        read?.let(::ensureCatalog)
+        val owner = read?.owner ?: catalogOwner
+        catalog.invalidateCatalog(owner) { ensureCurrent(); read?.let(::ensureCatalog) }
+        val generation = catalogGeneration.incrementAndGet()
+        if (read?.owner === owner) read.generation = generation
+    }
 
     override suspend fun resolveLink(url: String): SourceLinkTarget? = validated {
         val uri = java.net.URI(url)
@@ -246,13 +290,52 @@ internal class ScriptMusicProvider(
     }
     override suspend fun playlist(ref: PlaylistRef): SourcePlaylist = validated {
         requireRef(ref)
-        parsePlaylist(invoke("playlist.get", refParams("playlistId", ref)).asJsonObject).also { if (it.ref != ref) invalid() }
+        catalogRead { read ->
+            val cached = catalog.snapshot(read.owner, ref.playlistId) { ensureCatalog(read) }
+            val snapshot = cached?.takeIf { it.metadataLimit >= 5000 } ?: loadPlaylist(ref, read)
+            primeMetadata(snapshot, read)
+            snapshot.playlist
+        }
     }
-    override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> = trackPage("playlist.tracks", "playlistId", ref, page)
+    override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> = validated {
+        requireRef(ref)
+        catalogRead { read ->
+            if (page.refresh) invalidateCatalog(read)
+            val cached = catalog.snapshot(read.owner, ref.playlistId) { ensureCatalog(read) }
+            val firstPage = page.offset == 0 && page.cursor == null
+            val snapshot = cached?.takeUnless { firstPage && it.metadataLimit < 5000 }
+                ?: if ("playlist.get" in manifest.capabilities) loadPlaylist(ref, read) else cached
+            if (firstPage && snapshot != null) primeMetadata(snapshot, read)
+            snapshot?.ids?.let { indexedPage(it, page, read) } ?: cachedPage("playlist.tracks", ref.playlistId, page, read) {
+                parsePage(invoke("playlist.tracks", refParams("playlistId", ref, page)).asJsonObject, page) {
+                    SourceItem.TrackItem(parseCatalogTrack(it))
+                }
+            }.let { values -> SourcePage(values.items.map { (it as? SourceItem.TrackItem)?.track ?: invalid() }, values.hasMore, values.nextCursor) }
+        }
+    }
+
+    override suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection?): SourceTrackIndex? = validated {
+        catalogRead { read ->
+            val snapshot = when (collection) {
+                null -> {
+                    val ref = PlaylistRef(id, playlistId).also(::requireRef)
+                    catalog.snapshot(read.owner, playlistId) { ensureCatalog(read) }
+                        ?: if ("playlist.get" in manifest.capabilities) loadPlaylist(ref, read, metadataLimit = 1) else return@catalogRead null
+                }
+                LibraryCollection.LIKED_TRACKS -> likedSnapshot(read, metadataLimit = 1) ?: return@catalogRead null
+                else -> return@catalogRead null
+            }
+            snapshot.ids?.let { SourceTrackIndex(snapshot.playlist.ref.playlistId, it) }
+        }
+    }
 
     override suspend fun account(): SourceAccount? = validated {
-        val result = invoke("account.get", JsonObject())
-        if (result.isJsonNull) null else parser.account(result.asJsonObject, instanceId, version)
+        catalogRead { read ->
+            val result = invoke("account.get", JsonObject())
+            val account = if (result.isJsonNull) null else parser.account(result.asJsonObject, instanceId, version)
+            catalog.putAccount(read.owner, account) { ensureCatalog(read) }
+            account
+        }
     }
 
     /** Web bridge metadata must never recursively launch another interactive host effect. */
@@ -260,10 +343,27 @@ internal class ScriptMusicProvider(
         val result = invokeCoreOperation("account.get", JsonObject(), expectedAccountRevision)
         if (result.isJsonObject && result.asJsonObject.has("hostEffect")) throw SourceException(SourceErrorCode.UNSUPPORTED)
         if (sessionRevision.value != expectedAccountRevision) throw CancellationException("Source account changed")
-        if (result.isJsonNull) null else parser.account(result.asJsonObject, instanceId, version)
+        (if (result.isJsonNull) null else parser.account(result.asJsonObject, instanceId, version)).also {
+            catalog.putAccount(catalogOwner, it, ::ensureCurrent)
+        }
     }
     override suspend fun library(collection: LibraryCollection, page: PageRequest): SourcePage<SourceItem> = validated {
-        parsePage(invoke(collection.operation, pageParams(page)).asJsonObject, page) { parseItem(it, collection.type) }
+        catalogRead { read ->
+            if (page.refresh) invalidateCatalog(read)
+            ensureVerifiedAccount(read)
+            if (collection == LibraryCollection.LIKED_TRACKS) {
+                val snapshot = likedSnapshot(read, page)
+                if (snapshot?.ids != null) {
+                    if (page.offset == 0 && page.cursor == null) primeMetadata(snapshot, read)
+                    val values = indexedPage(snapshot.ids, page, read)
+                    if (values != null) return@catalogRead SourcePage(values.items.map { SourceItem.TrackItem(it) }, values.hasMore, values.nextCursor)
+                }
+            }
+            cachedPage(collection.operation, "", page, read) {
+                ensureVerifiedAccount(read)
+                parsePage(invoke(collection.operation, pageParams(page)).asJsonObject, page) { parseItem(it, collection.type) }
+            }
+        }
     }
     override suspend fun liked(ref: TrackRef): Boolean = validated {
         requireRef(ref)
@@ -349,6 +449,119 @@ internal class ScriptMusicProvider(
     override suspend fun removeTracks(ref: PlaylistRef, tracks: List<TrackRef>) = editTracks("playlist.removeTracks", ref, tracks)
     override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) = editTracks("playlist.reorderTracks", ref, tracks)
 
+    private suspend fun parseCatalogTrack(value: JsonObject): Track {
+        if (artworkStore != null) return parser.track(value)
+        val lazyArtwork = ScriptContentParser(id, manifest.apiVersion, playlistEditActions, features, featureRoutes) { url ->
+            try {
+                sanitizeFeatureArtwork(JsonObject().apply { addProperty("artworkUrl", url) })
+                    .asJsonObject.get("artworkUrl").asString
+            } catch (error: SourceException) {
+                if (error.code == SourceErrorCode.PLUGIN) "" else throw error
+            }
+        }
+        return lazyArtwork.track(value)
+    }
+
+    private suspend fun loadPlaylist(ref: PlaylistRef, read: CatalogRead, metadataLimit: Int = 5000): SourceCatalogCache.Snapshot {
+        val value = metadataResult("playlist.get", refParams("playlistId", ref), metadataLimit).asJsonObject
+        if (value.get("playlistId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString != ref.playlistId) invalid()
+        return storeSnapshot(value, read, metadataLimit)
+    }
+
+    private suspend fun metadataResult(operation: String, params: JsonObject, metadataLimit: Int): com.google.gson.JsonElement = try {
+        invoke(operation, params.deepCopy().apply { addProperty("metadataLimit", metadataLimit) })
+    } catch (error: SourceResponseSizeException) {
+        if (metadataLimit == 1) throw error
+        invoke(operation, params.deepCopy().apply { addProperty("metadataLimit", 1) })
+    }
+
+    private suspend fun storeSnapshot(value: JsonObject, read: CatalogRead, metadataLimit: Int): SourceCatalogCache.Snapshot {
+        val playlist = parsePlaylist(value)
+        val ids = value.get("trackIds")?.takeUnless { it.isJsonNull }?.let { rows ->
+            if (!rows.isJsonArray || rows.asJsonArray.size() > 100_000) invalid()
+            rows.asJsonArray.map { row ->
+                if (!row.isJsonPrimitive || !row.asJsonPrimitive.isString) invalid()
+                TrackRef(id, row.asString).also(::requireRef)
+            }
+        }
+        val allowedIds = ids?.toHashSet()
+        val rows = value.get("tracks")?.takeUnless { it.isJsonNull }
+        if (rows != null && (!rows.isJsonArray || rows.asJsonArray.size() > 5000)) invalid()
+        val tracks = rows?.asJsonArray?.mapNotNull { row ->
+            ensureCatalog(read)
+            try {
+                if (!row.isJsonObject) null else parseCatalogTrack(row.asJsonObject).also { track ->
+                    if (allowedIds != null && track.ref !in allowedIds) invalid()
+                }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: SourceException) {
+                if (error.code !in setOf(SourceErrorCode.INVALID_RESPONSE, SourceErrorCode.NOT_FOUND)) throw error
+                null
+            }
+        }.orEmpty()
+        val snapshot = SourceCatalogCache.Snapshot(playlist, ids, metadataLimit)
+        catalog.putTracks(read.owner, tracks) { ensureCatalog(read) }
+        catalog.putSnapshot(read.owner, snapshot) { ensureCatalog(read) }
+        return snapshot
+    }
+
+    private suspend fun ensureVerifiedAccount(read: CatalogRead) {
+        if (SourceCapability.ACCOUNT !in capabilities) return
+        val (known, value) = catalog.account(read.owner) { ensureCatalog(read) }
+        val account = if (known) value else account()
+        if (account == null) throw SourceException(SourceErrorCode.AUTH_REQUIRED)
+    }
+
+    private suspend fun likedSnapshot(read: CatalogRead, page: PageRequest = PageRequest(), metadataLimit: Int = 5000): SourceCatalogCache.Snapshot? {
+        ensureVerifiedAccount(read)
+        catalog.likedPlaylist(read.owner) { ensureCatalog(read) }?.let { playlistId ->
+            catalog.snapshot(read.owner, playlistId) { ensureCatalog(read) }?.takeIf { it.metadataLimit >= metadataLimit }?.let { return it }
+        }
+        val key = SourceCatalogCache.PageKey(LibraryCollection.LIKED_TRACKS.operation, "", page.copy(refresh = false))
+        if (catalog.page(read.owner, key) { ensureCatalog(read) } != null) return null
+        val result = metadataResult(LibraryCollection.LIKED_TRACKS.operation, pageParams(page).apply { addProperty("metadataOnly", true) }, metadataLimit).asJsonObject
+        if (result.has("items")) {
+            val legacy = parsePage(result, page) { parseItem(it, ContentType.TRACK) }
+            catalog.putPage(read.owner, key, legacy) { ensureCatalog(read) }
+            return null
+        }
+        return storeSnapshot(result, read, metadataLimit).also { snapshot ->
+            catalog.putLikedPlaylist(read.owner, snapshot.playlist.ref.playlistId) { ensureCatalog(read) }
+        }
+    }
+
+    private suspend fun primeMetadata(snapshot: SourceCatalogCache.Snapshot, read: CatalogRead) {
+        val ids = snapshot.ids?.takeIf { it.size <= 5000 && supportsBatchTrackRequests } ?: return
+        val cached = catalog.tracks(read.owner, ids) { ensureCatalog(read) }
+        val missing = ids.distinct().filterNot(cached::containsKey)
+        if (missing.isEmpty() || missing.size > manifest.catalogBatchSize) return
+        try { getTracks(missing) }
+        catch (error: SourceException) {
+            if (error.code !in setOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT)) throw error
+        }
+        ensureCatalog(read)
+    }
+
+    private suspend fun indexedPage(ids: List<TrackRef>, page: PageRequest, read: CatalogRead): SourcePage<Track>? {
+        val offset = page.cursor?.toIntOrNull()?.takeIf { it >= 0 } ?: page.offset
+        val end = (offset.toLong() + page.limit).coerceAtMost(ids.size.toLong()).toInt()
+        if (offset > ids.size) return SourcePage(emptyList())
+        val refs = ids.subList(offset, end)
+        if ("catalog.track" !in manifest.capabilities && catalog.tracks(read.owner, refs) { ensureCatalog(read) }.size < refs.distinct().size) return null
+        val tracks = getTracks(refs)
+        ensureCatalog(read)
+        return SourcePage(tracks, end < ids.size, if (end < ids.size) end.toString() else null)
+    }
+
+    private suspend fun cachedPage(operation: String, identity: String, page: PageRequest, read: CatalogRead,
+        load: suspend () -> SourcePage<SourceItem>): SourcePage<SourceItem> {
+        val key = SourceCatalogCache.PageKey(operation, identity, page.copy(refresh = false))
+        return catalog.page(read.owner, key) { ensureCatalog(read) } ?: load().also { value ->
+            catalog.putTracks(read.owner, value.items.mapNotNull { (it as? SourceItem.TrackItem)?.track }) { ensureCatalog(read) }
+            catalog.putPage(read.owner, key, value) { ensureCatalog(read) }
+        }
+    }
+
     private suspend fun trackPage(operation: String, key: String, ref: ContentRef, page: PageRequest): SourcePage<Track> = validated {
         requireRef(ref)
         parsePage(invoke(operation, refParams(key, ref, page)).asJsonObject, page, ::parseTrack)
@@ -362,28 +575,38 @@ internal class ScriptMusicProvider(
 
     override suspend fun getTrack(ref: TrackRef): Track? = validated {
         requireRef(ref)
-        val result = invoke("catalog.track", JsonObject().apply { addProperty("trackId", ref.trackId) })
-        if (result.isJsonNull) return@validated null
-        parseTrack(result.asJsonObject).also { if (it.ref != ref) invalid() }
+        catalogRead { read ->
+            catalog.tracks(read.owner, listOf(ref)) { ensureCatalog(read) }[ref]?.let { return@catalogRead it }
+            val result = invoke("catalog.track", JsonObject().apply { addProperty("trackId", ref.trackId) })
+            if (result.isJsonNull) return@catalogRead null
+            parseCatalogTrack(result.asJsonObject).also {
+                if (it.ref != ref) invalid()
+                catalog.putTracks(read.owner, listOf(it)) { ensureCatalog(read) }
+            }
+        }
     }
 
     override suspend fun getTracks(refs: List<TrackRef>): List<Track> = validated {
         refs.forEach(::requireRef)
-        if ("catalog.tracks" !in manifest.capabilities) {
-            return@validated refs.distinct().mapNotNull { getTrack(it) }
+        catalogRead { read ->
+            val tracks = catalog.tracks(read.owner, refs) { ensureCatalog(read) }.toMutableMap()
+            val missing = refs.distinct().filterNot(tracks::containsKey)
+            if ("catalog.tracks" !in manifest.capabilities) {
+                missing.mapNotNull { getTrack(it) }.forEach { tracks[it.ref] = it }
+            } else missing.chunked(manifest.catalogBatchSize).forEach { batch ->
+                val result = invoke("catalog.tracks", JsonObject().apply { add("trackIds", gson.toJsonTree(batch.map { it.trackId })) })
+                if (!result.isJsonArray || result.asJsonArray.size() > batch.size) invalid()
+                val requested = batch.toSet()
+                val values = result.asJsonArray.map { value ->
+                    if (!value.isJsonObject) invalid()
+                    parseCatalogTrack(value.asJsonObject).also { if (it.ref !in requested) invalid() }
+                }
+                if (values.map { it.ref }.distinct().size != values.size) invalid()
+                catalog.putTracks(read.owner, values) { ensureCatalog(read) }
+                values.forEach { tracks[it.ref] = it }
+            }
+            refs.mapNotNull(tracks::get)
         }
-        val tracks = refs.distinct().chunked(30).flatMap { batch ->
-            val result = invoke("catalog.tracks", JsonObject().apply {
-                add("trackIds", gson.toJsonTree(batch.map { it.trackId }))
-            })
-            if (!result.isJsonArray || result.asJsonArray.size() > batch.size) invalid()
-            val requested = batch.toSet()
-            result.asJsonArray.map { value ->
-                if (!value.isJsonObject) invalid()
-                parseTrack(value.asJsonObject).also { if (it.ref !in requested) invalid() }
-            }.also { values -> if (values.map { it.ref }.distinct().size != values.size) invalid() }
-        }.associateBy { it.ref }
-        refs.mapNotNull(tracks::get)
     }
 
     override suspend fun resolve(ref: TrackRef, requestedQuality: String): AudioResource = validated {
@@ -439,24 +662,40 @@ internal class ScriptMusicProvider(
 
     override fun acceptsResource(resource: AudioResource): Boolean = ScriptAudioResources.isRegistered(resource.uri)
 
-    private suspend fun <T> validated(block: suspend () -> T): T = try {
-        ensureCurrent()
-        block().also { ensureCurrent() }
-    } catch (cancelled: CancellationException) { throw cancelled
-    } catch (error: SourceException) {
-        ensureCurrent()
-        throw error
-    } catch (_: Exception) {
-        ensureCurrent()
-        // A malformed operation result does not revoke unrelated provider capabilities.
-        invalid()
+    private suspend fun <T> validated(block: suspend () -> T): T {
+        val owner = currentCoroutineContext()[InvocationOwner]?.takeIf { it.provider === this }
+            ?: return withContext(InvocationOwner(this, catalogOwner)) { validated(block) }
+        return try {
+            ensureCurrent()
+            block().also { ensureCurrent() }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: SourceException) {
+            ensureCurrent()
+            if (error.code == SourceErrorCode.AUTH_REQUIRED || error.code == SourceErrorCode.AUTH_EXPIRED) {
+                catalog.ensureOwner(owner.owner) {
+                    ensureCurrent()
+                    if (catalogOwner !== owner.owner) throw CancellationException("Source account changed")
+                }
+                val read = currentCoroutineContext()[CatalogRead]?.takeIf { it.provider === this }
+                invalidateCatalog(read)
+                catalog.putAccount(owner.owner, null, ::ensureCurrent)
+            }
+            throw error
+        } catch (_: Exception) {
+            ensureCurrent()
+            // A malformed operation result does not revoke unrelated provider capabilities.
+            invalid()
+        }
     }
 
     private suspend fun invoke(operation: String, params: JsonObject): com.google.gson.JsonElement {
+        val read = currentCoroutineContext()[CatalogRead]?.takeIf { it.provider === this }
+        read?.let(::ensureCatalog)
         val pin = kotlinx.coroutines.currentCoroutineContext()[com.ljyh.mei.source.core.SourceMutationContext]?.owner
         if (pin != null && (pin.provider !== this || pin.version != version)) throw CancellationException("Source mutation owner changed")
-        val revision = if (pin != null) pin.revision else sessionRevision.value
+        val revision = if (pin != null) pin.revision else read?.owner?.account ?: sessionRevision.value
         return coreExecutor?.executeCore(this, operation, params, coreHandler, revision) ?: serialized {
+            read?.let(::ensureCatalog)
             if (sessionRevision.value != revision) throw CancellationException("Source account changed before core operation")
             invokeLocked(operation, params)
         }
@@ -481,6 +720,8 @@ internal class ScriptMusicProvider(
     private suspend fun invokeLocked(operation: String, params: JsonObject,
         onSessionCommitted: ((String?) -> Unit)? = null): com.google.gson.JsonElement {
         ensureCurrent()
+        val read = currentCoroutineContext()[CatalogRead]?.takeIf { it.provider === this }
+        read?.let(::ensureCatalog)
         kotlinx.coroutines.currentCoroutineContext()[com.ljyh.mei.source.core.SourceMutationContext]?.owner?.let { pin ->
             if (pin.provider !== this || pin.version != version || sessionRevision.value != pin.revision) {
                 throw CancellationException("Source account changed while a mutation was queued")
@@ -492,19 +733,41 @@ internal class ScriptMusicProvider(
             SourceStatus.INCOMPATIBLE -> SourceErrorCode.UNSUPPORTED
             else -> SourceErrorCode.MISSING_PROVIDER
         })
+        if (operation in CATALOG_MUTATIONS) invalidateCatalog(read)
         try {
             var parameters = params
             repeat(9) { segment ->
-                val call = runtime.invoke(File(directory, manifest.entry).readText(), manifest, operation, parameters, config(), storage(), network,
-                    ensureCurrent = ::ensureCurrent)
+                val callOwner = catalogOwner
+                val originalStorage = storage()
+                val inputStorage = originalStorage.filterKeys { it !in manifest.discardStorageKeys }
+                if (inputStorage != originalStorage) saveStorage(inputStorage)
+                val verifiedUserId = catalog.account(callOwner, ::ensureCurrent).second?.ref?.accountId?.value
+                val call = runtime.invoke(File(directory, manifest.entry).readText(), manifest, operation, parameters, config(), inputStorage, network,
+                    verifiedUserId = verifiedUserId, ensureCurrent = {
+                        ensureCurrent()
+                        catalog.ensureOwner(callOwner)
+                        read?.let(::ensureCatalog)
+                    })
                 ensureCurrent()
                 call.storage?.let { values ->
-                    saveStorage(values)
-                    val next = sessionFingerprint(values)
+                    val nextStorage = values.filterKeys { it !in manifest.discardStorageKeys }
+                    saveStorage(nextStorage)
+                    val next = sessionFingerprint(nextStorage)
                     try {
                         if (!(call.result.isJsonObject && call.result.asJsonObject.has("hostEffect"))) onSessionCommitted?.invoke(next)
                     } finally {
                         // Durable credentials and their revision must remain in sync even if the caller was cancelled.
+                        val unknownAccountChanged = manifest.sessionKeys.isEmpty() && SourceCapability.ACCOUNT in capabilities && nextStorage != inputStorage
+                        if (next != callOwner.account || unknownAccountChanged) {
+                            val rebound = catalog.rebind(callOwner, next)
+                            catalogOwner = rebound
+                            val generation = catalogGeneration.incrementAndGet()
+                            if (read?.owner === callOwner) {
+                                read.owner = rebound
+                                read.generation = generation
+                            }
+                            currentCoroutineContext()[InvocationOwner]?.takeIf { it.provider === this && it.owner === callOwner }?.owner = rebound
+                        }
                         sessionRevision.value = next
                     }
                 }
@@ -565,7 +828,10 @@ internal class ScriptMusicProvider(
     }
 
     private fun ensureCurrent() {
-        if (!isCurrent()) throw CancellationException("Source revision changed")
+        if (!enabled || !isCurrent()) {
+            catalog.release(catalogOwner)
+            throw CancellationException("Source revision changed")
+        }
     }
 
     private suspend fun parseTrack(value: JsonObject): Track = parser.track(value)
@@ -606,6 +872,11 @@ internal class ScriptMusicProvider(
         if (description.length > 10_000) throw SourceException(SourceErrorCode.UNSUPPORTED)
     }
     private fun invalid(): Nothing = throw SourceException(SourceErrorCode.INVALID_RESPONSE, "Source returned invalid data")
+
+    private companion object {
+        val CATALOG_MUTATIONS = setOf("track.like", "collection.save", "playlist.create", "playlist.update", "playlist.delete",
+            "playlist.addTracks", "playlist.removeTracks", "playlist.reorderTracks")
+    }
 }
 
 /** Waiting for a preceding source request does not consume this operation's execution time. */

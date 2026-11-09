@@ -3,6 +3,7 @@ package com.ljyh.mei.source.script
 import com.google.gson.JsonObject
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
+import com.ljyh.mei.source.api.SourceResponseSizeException
 import java.net.IDN
 import java.net.InetAddress
 import java.io.InterruptedIOException
@@ -158,7 +159,7 @@ class ScriptNetworkPolicy(
                     chain.proceed(chain.request()).let { response ->
                         response.body?.let { payload ->
                             val source = payload.source()
-                            if (source.request(MAX_RESPONSE_BYTES + 1L)) { response.close(); invalidResponse() }
+                            if (source.request(MAX_RESPONSE_BYTES + 1L)) { response.close(); throw SourceResponseSizeException() }
                         }
                         response
                     }
@@ -202,9 +203,9 @@ class ScriptNetworkPolicy(
         if (encoding !in setOf("utf8", "base64")) denied()
         if (response.code in 300..399) throw SourceException(SourceErrorCode.NETWORK)
         val responseBody = response.body
-        if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) invalidResponse()
+        if (responseBody != null && responseBody.contentLength() > MAX_RESPONSE_BYTES) throw SourceResponseSizeException()
         val source = responseBody?.source()
-        if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) invalidResponse()
+        if (source != null && source.request(MAX_RESPONSE_BYTES + 1L)) throw SourceResponseSizeException()
         val bytes = source?.readByteArray() ?: byteArrayOf()
         JsonObject().apply {
             addProperty("status", response.code)

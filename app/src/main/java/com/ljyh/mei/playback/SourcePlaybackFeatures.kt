@@ -17,6 +17,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,7 +40,7 @@ interface QueueSourceSession {
     suspend fun ensureCurrent()
 }
 data class SourceShufflePage(val order: List<TrackRef>, val tracks: List<Track>, val unavailable: Set<TrackRef>,
-    val canonicalOrder: List<TrackRef>? = null)
+    val canonicalOrder: List<TrackRef>? = null, val usesUniformFallback: Boolean = false)
 
 @Singleton
 class SourcePlaybackFeatures @Inject constructor(
@@ -46,9 +48,11 @@ class SourcePlaybackFeatures @Inject constructor(
     private val router: SourceRouter,
     private val history: HistoryRepository,
 ) : QueueSourceActions {
+    private val officialShufflePolicies = OfficialShufflePolicies()
     override suspend fun open(providerId: String?): QueueSourceSession {
         val scope = "queue:${UUID.randomUUID()}"
-        return FeatureQueueSession(if (providerId == null) client.current(scope) else client.bind(providerId, scope), history)
+        return FeatureQueueSession(if (providerId == null) client.current(scope) else client.bind(providerId, scope),
+            history, officialShufflePolicies)
     }
     override suspend fun tracks(refs: List<TrackRef>): List<Track> = router.getTracks(refs)
     override fun canBatchTracks(providerId: String): Boolean = router.registry.provider(providerId)?.let {
@@ -56,7 +60,8 @@ class SourcePlaybackFeatures @Inject constructor(
     } == true
 }
 
-private class FeatureQueueSession(private val owner: BoundSourceFeatures, private val history: HistoryRepository) : QueueSourceSession {
+private class FeatureQueueSession(private val owner: BoundSourceFeatures, private val history: HistoryRepository,
+    private val officialShufflePolicies: OfficialShufflePolicies) : QueueSourceSession {
     private var resolvedShufflePlaylistId: String? = null
     private var officialShuffleTimeoutMs: Long? = null
     override val providerId: String get() = owner.providerId
@@ -75,6 +80,11 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures, privat
         }.distinctBy { it.code }
 
     override suspend fun canonicalShuffleIds(playlistId: String, collection: LibraryCollection?): List<TrackRef>? {
+        owner.completeTrackIds(playlistId, collection)?.let { index ->
+            if (index.ids.any { it.providerId != providerId }) invalid()
+            resolvedShufflePlaylistId = index.playlistId
+            return index.ids.distinct()
+        }
         if (!owner.supports("discovery", "shuffleInput")) return null
         val result = owner.invoke("discovery", "shuffleInput", JsonObject().apply {
             addProperty("playlistId", playlistId)
@@ -100,9 +110,11 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures, privat
     override suspend fun shuffle(playlistId: String, songId: String, algorithm: String, collection: LibraryCollection?,
         canonicalIds: List<TrackRef>?): SourceShufflePage {
         try {
+            val resolvedPlaylist = resolvedShufflePlaylistId?.takeIf(String::isNotBlank)
             val result = owner.invoke("discovery", "cloudShuffle", JsonObject().apply {
-                addProperty("playlistId", playlistId); addProperty("songId", songId); addProperty("alg", algorithm)
-                collection?.let { addProperty("collection", it.name) }
+                addProperty("playlistId", resolvedPlaylist ?: playlistId)
+                addProperty("songId", songId); addProperty("alg", algorithm)
+                if (resolvedPlaylist == null) collection?.let { addProperty("collection", it.name) }
             }).objectValue()
             val page = parseSourceShufflePage(result, providerId, owner::track)
             owner.ensureCurrent()
@@ -116,7 +128,7 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures, privat
         } catch (error: Exception) {
             owner.ensureCurrent()
             if (error is SourceException && error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
-            if (!owner.supports("discovery", "shuffleInput") || !owner.supports("discovery", "officialShuffle")) throw error
+            if (!owner.supports("discovery", "shufflePolicy") && !owner.supports("discovery", "officialShuffle")) throw error
         }
         val ids = canonicalIds ?: canonicalShuffleIds(playlistId, collection) ?: throw SourceException(SourceErrorCode.UNAVAILABLE)
         return officialShuffle(playlistId, songId, algorithm, collection, ids)
@@ -130,6 +142,15 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures, privat
             sourceShuffleHistory(history.getHistory(), providerId, System.currentTimeMillis())
         }
         owner.ensureCurrent()
+        if (owner.supports("discovery", "shufflePolicy")) {
+            val (orderedIds, uniform) = officialShufflePolicies.order(owner, ids.map { it.trackId }, songId, listeningHistory)
+            val order = orderedIds
+                .map { TrackRef(providerId, it) }
+            owner.ensureCurrent()
+            if (order.isEmpty()) throw SourceException(SourceErrorCode.UNAVAILABLE)
+            Timber.tag("SourceShuffle").d("route=official-native count=%d", order.size)
+            return SourceShufflePage(order, emptyList(), emptySet(), ids.toList(), usesUniformFallback = uniform)
+        }
         val parameters = JsonObject().apply {
             addProperty("playlistId", resolvedShufflePlaylistId ?: playlistId)
             addProperty("songId", songId); addProperty("alg", algorithm)
@@ -154,6 +175,37 @@ private class FeatureQueueSession(private val owner: BoundSourceFeatures, privat
             Timber.tag("SourceShuffle").d("route=official count=%d", it.order.size)
         }
     }
+}
+
+/** Policy and the official small-queue transition live for the exact native source session. */
+internal class OfficialShufflePolicies {
+    private val mutex = Mutex()
+    private val states = LinkedHashMap<String, Pair<BoundSourceFeatures, OfficialMobileShuffle.State>>(16, .75f, true)
+
+    suspend fun order(owner: BoundSourceFeatures, ids: List<String>, playingId: String, history: JsonArray): Pair<List<String>, Boolean> =
+        mutex.withLock {
+            owner.ensureCurrent()
+            val state = states[owner.providerId]?.takeIf { it.first.sameSession(owner) }?.second ?: run {
+                val policy = try {
+                    owner.invoke("discovery", "shufflePolicy").objectValue()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    owner.ensureCurrent()
+                    if (error is SourceException && error.code in setOf(SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) throw error
+                    JsonObject()
+                }
+                fun response(key: String): JsonObject? = policy.get(key)?.takeUnless { it.isJsonNull }?.let { it.objectValue() }
+                OfficialMobileShuffle.resolve(response("parent"), response("child")).also {
+                    owner.ensureCurrent()
+                    states[owner.providerId] = owner to it
+                    if (states.size > 16) states.remove(states.keys.first())
+                }
+            }
+            val order = withContext(Dispatchers.Default) { OfficialMobileShuffle.shuffle(ids, playingId, state, history) }
+            owner.ensureCurrent()
+            order to (state.strategy in setOf(OfficialMobileShuffle.Strategy.DEFAULT, OfficialMobileShuffle.Strategy.PURE))
+        }
 }
 
 /** Local playback starts belong to a source, without claiming an account-specific history. */

@@ -203,16 +203,22 @@ class SourceResolutionTest {
         } catch (_: SourceException) { }
     }
 
-    private class EffectProvider : MusicProvider, AccountScopedFeatureCapability, AccountRevisionCapability {
+    private class EffectProvider : MusicProvider, AccountScopedFeatureCapability, AccountRevisionCapability, CatalogIndexCapability {
         override val id = "effect-fixture"
         override val instanceId = ProviderInstanceId("installed:effect-fixture")
         override val displayName = "Effect fixture"
         override var version = "1"
         override var status = SourceStatus.READY
-        override val capabilities = setOf(SourceCapability.FEATURES)
-        override val features = mapOf("account" to setOf("login"), "discovery" to setOf("cloudShuffle", "officialShuffle"))
+        override var capabilities = setOf(SourceCapability.FEATURES)
+        override val features = mapOf("account" to setOf("login"), "discovery" to setOf("cloudShuffle", "officialShuffle", "shufflePolicy"))
         override val accountRevision = kotlinx.coroutines.flow.MutableStateFlow("account-A")
         val calls = mutableListOf<com.google.gson.JsonObject>()
+        var indexReads = 0
+        var indexIds = listOf(TrackRef(id, "1"))
+        override suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection?): SourceTrackIndex {
+            indexReads++
+            return SourceTrackIndex(playlistId, indexIds)
+        }
         var committedRevision: String? = null
         var respond: suspend (com.google.gson.JsonObject) -> com.google.gson.JsonElement = { parameters ->
             if (parameters.has("\$continuation")) parameters.getAsJsonObject("\$continuation").get("effect")
@@ -234,6 +240,49 @@ class SourceResolutionTest {
                 }
             }
         }
+    }
+
+    @Test fun nativeShufflePolicyAndIndexRespectSourceCapabilitiesAndSession() = runTest {
+        val source = EffectProvider()
+        val registry = ProviderRegistry(listOf(source))
+        val router = SourceRouter(registry)
+        val executor = SourceFeatureExecutor(router)
+        val policies = com.ljyh.mei.playback.OfficialShufflePolicies()
+        val ids = (1..32).map(Int::toString)
+        fun bind(provider: EffectProvider, scope: String) = BoundSourceFeatures(router, executor, provider,
+            provider.accountRevision.value, scope, SourceHostEffectHandler.Unsupported)
+        source.respond = { com.google.gson.JsonParser.parseString("""{"parent":null,"child":null}""") }
+        val first = bind(source, "queue-first")
+        val second = bind(source, "queue-second")
+        assertNull("An optional index cannot freeze pages without catalog hydration", first.completeTrackIds("playlist", null))
+        assertEquals(0, source.indexReads)
+        source.capabilities += SourceCapability.TRACK
+        assertEquals(source.indexIds, first.completeTrackIds("playlist", null)?.ids)
+        source.indexIds = listOf(TrackRef(source.id, "1"), TrackRef(source.id, "1"), TrackRef(source.id, "2"))
+        assertNull("Repeated recordings need the original occurrence-preserving pagination", first.completeTrackIds("playlist", null))
+        assertEquals(source.indexIds, source.completeTrackIds("playlist", null).ids)
+        assertTrue(first.sameSession(second))
+        val prepared = policies.order(first, ids, "1", com.google.gson.JsonArray())
+        assertEquals(ids.toSet(), prepared.first.toSet())
+        assertTrue(prepared.second)
+        policies.order(second, ids, "1", com.google.gson.JsonArray())
+        assertEquals("Opening another queue must reuse the host policy", 1, source.calls.size)
+        source.accountRevision.value = "account-B"
+        val accountChanged = bind(source, "queue-account-B")
+        assertFalse(first.sameSession(accountChanged))
+        policies.order(accountChanged, ids, "1", com.google.gson.JsonArray())
+        assertEquals(2, source.calls.size)
+        source.version = "2"
+        val versionChanged = bind(source, "queue-version-2")
+        assertFalse(accountChanged.sameSession(versionChanged))
+        policies.order(versionChanged, ids, "1", com.google.gson.JsonArray())
+        assertEquals(3, source.calls.size)
+        val replacement = EffectProvider().apply { respond = source.respond }
+        registry.register(replacement)
+        val replaced = bind(replacement, "queue-replacement")
+        assertFalse(first.sameSession(replaced))
+        policies.order(replaced, ids, "1", com.google.gson.JsonArray())
+        assertEquals("A replacement instance cannot inherit another runtime's policy", 1, replacement.calls.size)
     }
 
     @Test fun aScreenKeepsItsOwnSuccessfulLoginButRejectsLaterExternalAccountChanges() = runTest {

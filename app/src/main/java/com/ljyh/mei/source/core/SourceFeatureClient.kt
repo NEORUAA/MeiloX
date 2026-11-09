@@ -51,6 +51,9 @@ class BoundSourceFeatures internal constructor(
     val instanceId: ProviderInstanceId get() = owner.instanceId
     private val version = owner.version
 
+    internal fun sameSession(other: BoundSourceFeatures): Boolean =
+        owner === other.owner && version == other.version && revision == other.revision
+
     fun supports(feature: String, action: String): Boolean =
         action in (owner as? SourceFeatureCapability)?.features?.get(feature).orEmpty()
 
@@ -96,6 +99,14 @@ class BoundSourceFeatures internal constructor(
         ensureCurrent()
         val capability = owner as? SourceFeatureContentCapability ?: throw SourceException(SourceErrorCode.UNSUPPORTED)
         return capability.parseFeatureTrack(value).also { ensureCurrent() }
+    }
+
+    suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection?): SourceTrackIndex? {
+        ensureCurrent()
+        if (SourceCapability.TRACK !in owner.capabilities) return null
+        val index = (owner as? CatalogIndexCapability)?.completeTrackIds(playlistId, collection)
+        ensureCurrent()
+        return index?.takeIf { it.ids.size == it.ids.toHashSet().size }
     }
 
     suspend fun requireTrue(feature: String, action: String, parameters: JsonObject = JsonObject()) {

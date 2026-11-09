@@ -357,6 +357,7 @@ class ScriptPluginInstrumentedTest {
                 } finally { release.countDown(); login.cancelAndJoin() }
             }
         } finally { release.countDown(); directory.deleteRecursively() }
+
     }
 
     @Test
@@ -561,6 +562,33 @@ class ScriptPluginInstrumentedTest {
                 } finally { release.countDown(); changingAccount.cancelAndJoin() }
             }
         } finally { release.countDown(); directory.deleteRecursively() }
+        val rotatedManifest = PluginManifest.parse("""{"id":"org.meilox.read-account","name":"Read account fixture","author":"Tests",
+            "version":"1","apiVersion":2,"capabilities":["account.get","library.createdPlaylists","playlist.get","playlist.tracks"],
+            "sessionKeys":["session"],"permissions":{"storage":true}}""")
+        val rotatedDirectory = File(context.cacheDir, "source-read-account-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val rotatedStorage = java.util.concurrent.atomic.AtomicReference<Map<String, String>>(mapOf("session" to "first"))
+        try {
+            File(rotatedDirectory, "index.js").writeText("""globalThis.sourcePlugin = {
+                'account.get':function() { return {result:{accountId:'verified',displayName:'Verified'},storage:{session:'second'}}; },
+                'library.createdPlaylists':function() { return {error:'AUTH_EXPIRED'}; },
+                'playlist.get':function() { return {result:{playlistId:'playlist',title:'Playlist',trackIds:['one','two'],
+                    tracks:[{trackId:'one',title:'First'}]}}; },
+                'playlist.tracks':function() { return {result:{items:[{trackId:'two',title:'Paged second'}],hasMore:false}}; }
+            };""".trimIndent())
+            val provider = ScriptMusicProvider(rotatedManifest, rotatedDirectory, ScriptRuntime(context), enabled = true,
+                configurationSnapshot = emptyMap(), isCurrent = { true }, config = { emptyMap() }, storage = { rotatedStorage.get() },
+                saveStorage = { rotatedStorage.set(it.toMap()) }, onFailure = { fail("A rejected account must not fail the provider") }, configurationVersion = 0)
+            val expected = provider.accountRevision.value
+            try { provider.library(LibraryCollection.CREATED_PLAYLISTS, PageRequest()); fail("Expected authentication failure") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.AUTH_EXPIRED, error.code) }
+            assertNotEquals(expected, provider.accountRevision.value)
+            assertNull(provider.platformConfiguration()["userId"])
+            val playlist = PlaylistRef(rotatedManifest.providerId, "playlist")
+            assertEquals(listOf("one", "two"), provider.completeTrackIds(playlist.playlistId)?.ids?.map { it.trackId })
+            assertEquals("Paged second", provider.playlistTracks(playlist, PageRequest(offset = 1, limit = 1)).items.single().title)
+            assertEquals(SourceStatus.READY, provider.status)
+        } finally { rotatedDirectory.deleteRecursively() }
+
     }
 
     @Test

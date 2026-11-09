@@ -66,7 +66,7 @@ class HomeRepositoryTest {
         val preferences = SourcePreferences(MemoryPreferences())
         preferences.update { it.copy(preferredBrowseProvider = provider.id) }
         val model = SourceProfileViewModel(preferences, registry,
-            readAccount = { (registry.requireProvider(it) as AccountCapability).account() },
+            readAccount = { id, _ -> (registry.requireProvider(id) as AccountCapability).account() },
             exportAccount = { error("Session export is outside this account-state regression") }).also(models::add)
         provider.failure = SourceErrorCode.NETWORK
         advanceUntilIdle()
@@ -129,6 +129,201 @@ class HomeRepositoryTest {
         fixture.cache.file(fixture.owner).writeBytes(corrupted)
         assertNull(fixture.cache.read(fixture.owner, fixture.provider))
         assertArrayEquals(corrupted, fixture.cache.file(fixture.owner).readBytes())
+    }
+
+    @Test fun libraryAccountsPublishBeforeRowsAndSurviveTabChangesAndTemporaryFailures() = runTest(dispatcher) {
+        val provider = ProfileProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val model = SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()), registry).also(models::add)
+        val firstRows = CompletableDeferred<Unit>()
+        provider.libraryPending = firstRows
+        try {
+            model.open(SourceContentRequest.Library(LibraryCollection.LIKED_TRACKS, provider.id))
+            runCurrent()
+            assertEquals(provider.value, model.state.value.account)
+            assertTrue(model.state.value.loading)
+            assertTrue(model.state.value.items.isEmpty())
+            firstRows.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(1, provider.reads)
+
+            val createdRows = CompletableDeferred<Unit>()
+            provider.libraryPending = createdRows
+            model.open(SourceContentRequest.Library(LibraryCollection.CREATED_PLAYLISTS, provider.id))
+            runCurrent()
+            assertEquals(provider.value, model.state.value.account)
+            assertTrue(model.state.value.loading)
+            assertTrue(model.state.value.items.isEmpty())
+            assertEquals(1, provider.reads)
+            createdRows.complete(Unit)
+            advanceUntilIdle()
+
+            val account = CompletableDeferred<Unit>()
+            val freshRows = CompletableDeferred<Unit>()
+            provider.pending = account
+            provider.libraryPending = freshRows
+            val previous = provider.value
+            provider.value = previous?.copy(displayName = "Refreshed account")
+            model.refresh()
+            runCurrent()
+            assertEquals(2, provider.reads)
+            assertEquals(previous, model.state.value.account)
+            account.complete(Unit)
+            runCurrent()
+            assertEquals(provider.value, model.state.value.account)
+            assertTrue(model.state.value.loading)
+            freshRows.complete(Unit)
+            advanceUntilIdle()
+            provider.pending = null
+            provider.libraryPending = null
+
+            for (code in listOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT, SourceErrorCode.AUTH_REQUIRED, SourceErrorCode.AUTH_EXPIRED)) {
+                val authentication = code == SourceErrorCode.AUTH_REQUIRED || code == SourceErrorCode.AUTH_EXPIRED
+                provider.failure = code.takeIf { authentication }
+                provider.libraryFailure = code.takeUnless { authentication }
+                model.refresh()
+                advanceUntilIdle()
+                assertEquals(code, model.state.value.error)
+                assertEquals(if (authentication) null else provider.value, model.state.value.account)
+                provider.failure = null
+                provider.libraryFailure = null
+                model.refresh()
+                advanceUntilIdle()
+                assertEquals(provider.value, model.state.value.account)
+            }
+            assertTrue(provider.libraryRequests.take(2).all { !it.refresh })
+            assertTrue(provider.libraryRequests.drop(2).all { it.refresh })
+
+            model.open(SourceContentRequest.Detail(PlaylistRef(provider.id, "playlist")))
+            advanceUntilIdle()
+            assertEquals("Playlist 1", model.state.value.title)
+            provider.remotePlaylistVersion = 2
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(provider.playlistRequests.last().refresh)
+            assertEquals("Playlist 2", model.state.value.title)
+            assertEquals(TrackRef(provider.id, "track-2"), model.state.value.items.single().ref)
+        } finally {
+            firstRows.complete(Unit)
+            provider.pending?.complete(Unit)
+            provider.libraryPending?.complete(Unit)
+        }
+    }
+
+    @Test fun retainedLibraryAccountsNeverCrossAnAccountVersionOrProviderInstance() = runTest(dispatcher) {
+        for (change in listOf("account", "version", "instance")) {
+            val original = ProfileProvider()
+            val registry = ProviderRegistry(listOf(original))
+            val model = SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()), registry).also(models::add)
+            model.open(SourceContentRequest.Library(LibraryCollection.LIKED_TRACKS, original.id))
+            advanceUntilIdle()
+            assertEquals(original.value, model.state.value.account)
+            val next = if (change == "instance") ProfileProvider(ProviderInstanceId("fixture:replacement")) else original
+            val response = CompletableDeferred<Unit>()
+            next.pending = response
+            next.value = SourceAccount(SourceAccountRef(next.instanceId, ProviderAccountId("next")), "Next")
+            try {
+                when (change) {
+                    "account" -> next.accountRevision.value = "next-account"
+                    "version" -> { next.version = "2"; registry.refresh() }
+                    else -> { registry.unregister(original.instanceId); registry.register(next) }
+                }
+                runCurrent()
+                assertNull(model.state.value.account)
+                assertTrue(model.state.value.loading)
+                response.complete(Unit)
+                advanceUntilIdle()
+                assertEquals(next.value, model.state.value.account)
+            } finally { response.complete(Unit) }
+        }
+    }
+
+    @Test fun explicitProfileRefreshBypassesAccountCacheWhileAutomaticSyncUsesTheFreshResult() = runTest(dispatcher) {
+        val provider = ProfileProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry)
+        val preferences = SourcePreferences(MemoryPreferences())
+        preferences.update { it.copy(preferredBrowseProvider = provider.id) }
+        val refreshes = mutableListOf<Boolean>()
+        var nextReadGate: CompletableDeferred<Unit>? = null
+        val model = SourceProfileViewModel(preferences, registry,
+            readAccount = { id, refresh ->
+                refreshes += refresh
+                val gate = nextReadGate
+                nextReadGate = null
+                gate?.await()
+                router.account(id, refresh = refresh)
+            },
+            exportAccount = { error("Unexpected export") }).also(models::add)
+        advanceUntilIdle()
+        registry.refresh()
+        model.refresh(force = false)
+        advanceUntilIdle()
+        assertEquals(1, provider.reads)
+        assertTrue(refreshes.none { it })
+        val pending = CompletableDeferred<Unit>()
+        provider.pending = pending
+        val previous = provider.value
+        provider.value = previous?.copy(displayName = "Manual refresh")
+        try {
+            model.refresh()
+            model.refresh(force = false)
+            runCurrent()
+            assertTrue(refreshes.last())
+            assertEquals(2, provider.reads)
+            assertEquals(previous, model.state.value.account)
+            pending.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(provider.value, model.state.value.account)
+            provider.pending = null
+
+            provider.value = provider.value?.copy(displayName = "Account page refresh")
+            router.account(provider.id, refresh = true)
+            assertEquals(3, provider.reads)
+            model.refresh(force = false)
+            advanceUntilIdle()
+            assertFalse(refreshes.last())
+            assertEquals(3, provider.reads)
+            assertEquals(provider.value, model.state.value.account)
+
+            val next = CompletableDeferred<Unit>()
+            provider.pending = next
+            provider.accountRevision.value = "next-account"
+            runCurrent()
+            assertFalse(refreshes.last())
+            assertNull(model.state.value.account)
+            assertEquals(4, provider.reads)
+            next.complete(Unit)
+            advanceUntilIdle()
+
+            val completingAutomaticRead = CompletableDeferred<Unit>()
+            nextReadGate = completingAutomaticRead
+            model.refresh(force = false)
+            runCurrent()
+            assertFalse(refreshes.last())
+            val readsBefore = provider.reads
+            // Complete the older automatic read before the new refresh emission is collected.
+            completingAutomaticRead.complete(Unit)
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(refreshes.last())
+            assertEquals(readsBefore + 1, provider.reads)
+
+            val cancelledManualRead = CompletableDeferred<Unit>()
+            nextReadGate = cancelledManualRead
+            model.refresh()
+            runCurrent()
+            assertTrue(refreshes.last())
+            provider.accountRevision.value = "revision-during-manual-refresh"
+            advanceUntilIdle()
+            assertTrue(refreshes.last())
+            val readsAfterRevision = provider.reads
+            model.refresh(force = false)
+            advanceUntilIdle()
+            assertFalse(refreshes.last())
+            assertEquals(readsAfterRevision, provider.reads)
+            cancelledManualRead.complete(Unit)
+        } finally { pending.complete(Unit); provider.pending?.complete(Unit); nextReadGate?.complete(Unit) }
     }
 
     @Test fun sourceVersionInstanceAndAccountEachHaveTheirOwnCache() = runBlocking {
@@ -329,22 +524,45 @@ class HomeRepositoryTest {
         override val data = MutableStateFlow(emptyPreferences())
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
     }
-    private class ProfileProvider : MusicProvider, AccountCapability, AccountRevisionCapability, FeatureContribution {
+    private class ProfileProvider(override val instanceId: ProviderInstanceId = ProviderInstanceId("fixture:profile")) : MusicProvider,
+        AccountCapability, AccountRevisionCapability, FeatureContribution, LibraryCapability, PlaylistCapability {
         override val id = "profile"
         override val displayName = "Profile"
-        override val instanceId = ProviderInstanceId("fixture:profile")
-        override val capabilities = setOf(SourceCapability.ACCOUNT)
+        override var version = "1"
+        override val capabilities = setOf(SourceCapability.ACCOUNT, SourceCapability.LIBRARY, SourceCapability.PLAYLIST)
+        override val collections = setOf(LibraryCollection.LIKED_TRACKS, LibraryCollection.CREATED_PLAYLISTS)
         override val accountRevision = MutableStateFlow<String?>("first-account")
         override val featureRoutes = setOf("account/home", "account/login")
         var value: SourceAccount? = SourceAccount(SourceAccountRef(instanceId, ProviderAccountId("account")), "Account")
         var failure: SourceErrorCode? = null
         var pending: CompletableDeferred<Unit>? = null
+        var libraryPending: CompletableDeferred<Unit>? = null
+        var libraryFailure: SourceErrorCode? = null
+        val libraryRequests = mutableListOf<PageRequest>()
+        val playlistRequests = mutableListOf<PageRequest>()
+        var remotePlaylistVersion = 1
+        private var displayedPlaylistVersion = 1
         var reads = 0
         override suspend fun account(): SourceAccount? {
             reads++
             pending?.await()
             failure?.let { throw SourceException(it) }
             return value
+        }
+        override suspend fun library(collection: LibraryCollection, page: PageRequest): SourcePage<SourceItem> {
+            libraryRequests += page
+            libraryPending?.await()
+            libraryFailure?.let { throw SourceException(it) }
+            val item = if (collection == LibraryCollection.LIKED_TRACKS)
+                SourceItem.TrackItem(Track(TrackRef(id, "track"), "Track", emptyList()))
+            else SourceItem.PlaylistItem(SourcePlaylist(PlaylistRef(id, "playlist"), "Playlist"))
+            return SourcePage(listOf(item))
+        }
+        override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(ref, "Playlist $displayedPlaylistVersion")
+        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
+            playlistRequests += page
+            if (page.refresh) displayedPlaylistVersion = remotePlaylistVersion
+            return SourcePage(listOf(Track(TrackRef(id, "track-$displayedPlaylistVersion"), "Track", emptyList())))
         }
     }
     private class FeedProvider : MusicProvider, FeedCapability, AccountRevisionCapability, SourceFeatureCapability, FeatureContribution {

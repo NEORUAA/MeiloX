@@ -5,6 +5,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.source.ShuffleOrder
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.ljyh.mei.data.model.MediaMetadata
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.playback.queue.PlaylistQueueSource
@@ -33,6 +36,100 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackOrderTest {
+    @Test
+    fun officialMobilePolicyKeepsAndroidAssignmentsDefaultsAndPresentInvalidValues() {
+        fun json(value: String) = JsonParser.parseString(value).asJsonObject
+        fun parent(group: String, config: String = "{}") = json("""{"code":200,"data":{"RandomPlaylist_Adjustment_Android":{"expGroupName":"$group","clientConfig":$config}}}""")
+        fun child(group: String, variant: String, config: String = "{}") = json("""{"code":200,"data":{"RandomPlaylist_Adjustment_${group.uppercase()}_Android":{"expGroupName":"$variant","clientConfig":$config}}}""")
+        val resolved = OfficialMobileShuffle.resolve(parent("t3", """{"a0":1,"b0":0,"c0":99,"d0":2,"e0":0.5}"""),
+            child("t3", "t2", """{"a6":7}"""))
+        assertEquals(OfficialMobileShuffle.Strategy.T3_T2, resolved.strategy)
+        assertEquals(OfficialMobileShuffle.Parameters(1.0, 0.0, 0.0, 2.0, .5, subgroupSize = 7.0), resolved.params)
+        assertEquals(OfficialMobileShuffle.Strategy.DEFAULT, OfficialMobileShuffle.resolve(parent("t2"), null).strategy)
+        assertEquals(OfficialMobileShuffle.Strategy.T2_C, OfficialMobileShuffle.resolve(parent("t2"), json("""{"code":200,"data":{}}""")).strategy)
+        assertEquals(OfficialMobileShuffle.Strategy.DEFAULT, OfficialMobileShuffle.resolve(parent("unknown"), null).strategy)
+        assertEquals(OfficialMobileShuffle.Strategy.DEFAULT, OfficialMobileShuffle.resolve(json("""{"code":"200","data":{}}"""), null).strategy)
+        val parsed = requireNotNull(OfficialMobileShuffle.resolve(parent("t1", """{"a0":null,"b0":".75 trailing","c0":true,"d0":"0x10","e0":"invalid","maxFetchPlayRecordCount0":1000000000000000000000}"""),
+            child("t1", "t1", """{"a4":"7.9 songs"}""")).params)
+        assertTrue(parsed.a.isNaN())
+        assertEquals(.75, parsed.b, 0.0)
+        assertTrue(parsed.c.isNaN())
+        assertEquals(16.0, parsed.d, 0.0)
+        assertTrue(parsed.e.isNaN())
+        assertEquals(1.0, parsed.maxFetchPlayRecordCount, 0.0)
+        assertEquals(7.0, parsed.subgroupSize, 0.0)
+        val t4 = OfficialMobileShuffle.resolve(parent("t4", """{"a0":99,"b0":99,"c0":99,"d0":99,"e0":99,"maxFetchPlayRecordCount0":2}"""), null)
+        assertEquals(OfficialMobileShuffle.State(OfficialMobileShuffle.Strategy.T4,
+            OfficialMobileShuffle.Parameters(0.0, 0.0, 0.0, 0.0, 0.0, maxFetchPlayRecordCount = 2.0)), t4)
+    }
+
+    @Test
+    fun officialMobileOrderingMatchesWeightedAndPlayCountVectors() {
+        val ids = (1..12).map(Int::toString)
+        val now = 1_700_000_000_000L
+        val history = JsonArray().apply { ids.forEach { id -> add(JsonObject().apply {
+            addProperty("id", id); addProperty("play_times", id.toInt())
+            addProperty("timestamp", now - id.toLong() * 86_400_000); addProperty("duration", 0)
+        }) } }
+        val params = OfficialMobileShuffle.Parameters(0.0, 1.0, 0.0, 0.0, 1.0, subgroupSize = 1.0)
+        val vectors = mapOf(
+            OfficialMobileShuffle.Strategy.T1_T1 to listOf("1", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2"),
+            OfficialMobileShuffle.Strategy.T2_C to listOf("1", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "12"),
+            OfficialMobileShuffle.Strategy.T3_T2 to listOf("1", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2"),
+            OfficialMobileShuffle.Strategy.T4 to listOf("1", "3", "4", "5", "6", "7", "8", "9", "10", "11", "2", "12"),
+        )
+        vectors.forEach { (strategy, expected) ->
+            assertEquals(strategy.name, expected, OfficialMobileShuffle.shuffle(ids.reversed(), "1",
+                OfficialMobileShuffle.State(strategy, params), history, now, random = { 0.0 }))
+        }
+        val malformed = params.copy(a = Double.NaN, subgroupSize = Double.NaN)
+        val order = OfficialMobileShuffle.shuffle(ids, "1", OfficialMobileShuffle.State(OfficialMobileShuffle.Strategy.T1_T1,
+            malformed), history, now, random = { 0.0 })
+        assertEquals(listOf("1", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "2"), order)
+    }
+
+    @Test
+    fun officialMobileShuffleSortsNativeInputPreservesExcludedOccurrencesAndCachesPureTransition() {
+        assertEquals(listOf("2", "3", "4", "1"), OfficialMobileShuffle.pureShuffle(mutableListOf("1", "2", "3", "4")) { 0.0 })
+        assertEquals(listOf("12", "3", "2", "100", "1"), OfficialMobileShuffle.shuffle(
+            listOf("2", "1", "100", "12", "3"), "12", OfficialMobileShuffle.resolve(null, null), random = { 0.0 }))
+        val excluded = OfficialMobileShuffle.shuffle(listOf("2", "1", "2", "3"), "3",
+            OfficialMobileShuffle.resolve(null, null), notShuffleIds = listOf("2", "2", "missing"), random = { 0.0 })
+        assertEquals(listOf("3", "1", "2", "2", "missing"), excluded)
+        val state = OfficialMobileShuffle.State(OfficialMobileShuffle.Strategy.T1_T1,
+            OfficialMobileShuffle.Parameters(0.0, 1.0, 0.0, 0.0, 1.0, subgroupSize = 1.0))
+        assertEquals(listOf("1", "3", "4", "5", "2"), OfficialMobileShuffle.shuffle((1..5).map(Int::toString),
+            "1", state, random = { 0.0 }))
+        assertEquals(OfficialMobileShuffle.Strategy.PURE, state.strategy)
+        assertEquals(listOf("1", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "2"),
+            OfficialMobileShuffle.shuffle((1..12).map(Int::toString), "1", state, random = { 0.0 }))
+        val complete = (1..1534).map(Int::toString)
+        val order = OfficialMobileShuffle.shuffle(complete.reversed(), "713", OfficialMobileShuffle.resolve(null, null), random = { .37 })
+        assertEquals("713", order.first())
+        assertEquals(complete.toSet(), order.toSet())
+        assertEquals(complete.size, order.size)
+        assertFalse(complete == order)
+    }
+
+    @Test
+    fun officialMobileHistoryCapsGloballyAndKeepsFirstCountWithLastTruthyTimestamp() {
+        val now = 1_700_000_000_000L
+        val history = JsonArray().apply {
+            fun row(id: String, times: Int, days: Int) = JsonObject().apply {
+                addProperty("id", id); addProperty("play_times", times); addProperty("timestamp", now - days * 86_400_000L)
+            }
+            add(row("outside", 8, 1)); add(row("a", 5, 2)); add(row("a", 99, 3)); add(row("old", 1, 731))
+        }
+        val params = OfficialMobileShuffle.Parameters(1.0, 0.0, 0.0, 0.0, 1.0, maxFetchPlayRecordCount = 2.0)
+        val capped = OfficialMobileShuffle.historyById(history, params, now)
+        assertEquals(setOf("outside", "a"), capped.keys)
+        assertEquals(OfficialMobileShuffle.HistoryRecord(5.0, 2.0), capped["a"])
+        val uncapped = OfficialMobileShuffle.historyById(history, params.copy(maxFetchPlayRecordCount = -1.0), now)
+        assertEquals(OfficialMobileShuffle.HistoryRecord(5.0, 3.0), uncapped["a"])
+        assertEquals(kotlin.math.sqrt(5.0), OfficialMobileShuffle.historyWeight("a", uncapped, params, 1), 0.0)
+        assertTrue(OfficialMobileShuffle.historyById(history, params.copy(maxFetchPlayRecordCount = Double.NaN), now).isEmpty())
+    }
+
     @Test
     fun shuffleHistoryAggregatesRecentStartsWithinTheTypedSourceAndKeepsGlobalOrdering() {
         val now = 2L * 365 * 86_400_000 + 10_000

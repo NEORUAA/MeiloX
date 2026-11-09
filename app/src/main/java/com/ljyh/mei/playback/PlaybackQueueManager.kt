@@ -268,6 +268,7 @@ class PlaybackQueueManager(
         Timber.tag("SourceShuffle").d("stage=request elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
         serverShuffleJob = scope.launch(Dispatchers.Main) {
             var localPrepared = false
+            var uniformPrepared = false
             try {
                 if (contentQueue != null && !contentQueue.isSourceCurrent()) return@launch
                 val refs = contentQueue?.let { queue ->
@@ -297,7 +298,7 @@ class PlaybackQueueManager(
                             if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue ||
                                 cloudShuffleEnabled != true || !player.shuffleModeEnabled && !_isShuffleModeEnabled.value ||
                                 isFmMode || !serverShuffleAllowed()) throw CancellationException("Source shuffle changed")
-                        }
+                        }.also { uniformPrepared = it }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
@@ -330,6 +331,11 @@ class PlaybackQueueManager(
                 data.canonicalOrder?.let { contentQueue?.rememberCanonicalShuffleInput(it, owner) }
                 currentCoroutineContext().ensureActive()
                 if (generation != serverShuffleGeneration || playlistSource != source || sourceContentQueue !== contentQueue) return@launch
+                if (uniformPrepared && data.usesUniformFallback) {
+                    Timber.tag("SourceShuffle").d("stage=retained-uniform elapsedMs=%d count=%d", SystemClock.elapsedRealtime() - startedAt, player.mediaItemCount)
+                    checkAndLoadMetadata()
+                    return@launch
+                }
                 var applied = false
                 val plan = createSourceShufflePlan(data, orderBeforeRequest, prefixBeforeRequest)
                 if (plan != null) {

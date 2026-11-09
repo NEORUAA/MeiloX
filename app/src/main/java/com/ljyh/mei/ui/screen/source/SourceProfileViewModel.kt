@@ -9,6 +9,8 @@ import com.ljyh.mei.source.core.SourceRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -26,12 +28,12 @@ data class SourceProfileState(
 class SourceProfileViewModel internal constructor(
     preferences: SourcePreferences,
     registry: ProviderRegistry,
-    private val readAccount: suspend (String) -> SourceAccount?,
+    private val readAccount: suspend (String, Boolean) -> SourceAccount?,
     private val exportAccount: suspend (String) -> Pair<String, String>,
 ) : ViewModel() {
     @Inject constructor(preferences: SourcePreferences, registry: ProviderRegistry, router: SourceRouter,
         client: com.ljyh.mei.source.core.SourceFeatureClient) : this(
-        preferences, registry, { router.account(it) }, { providerId ->
+        preferences, registry, { id, refresh -> router.account(id, refresh = refresh) }, { providerId ->
             val owner = client.bind(providerId, "session-export:${java.util.UUID.randomUUID()}")
             val value = owner.invoke("login", "exportSession").asJsonObject
             val label = value.get("label")?.asString?.takeIf { it.length in 1..100 } ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)
@@ -41,17 +43,21 @@ class SourceProfileViewModel internal constructor(
         },
     )
     private val refreshVersion = MutableStateFlow(0L)
+    private var forcedRefreshVersion = 0L
     private val mutableState = MutableStateFlow(SourceProfileState())
     val state = mutableState.asStateFlow()
     init {
         viewModelScope.launch {
             var displayedOwner: Triple<MusicProvider?, String?, String?>? = null
-            combine(preferences.settings.map { it.preferredBrowseProvider }.distinctUntilChanged(), registry.revision, refreshVersion) { id, _, _ -> id }
-                .flatMapLatest { id ->
+            var completedForcedRefresh = 0L
+            combine(preferences.settings.map { it.preferredBrowseProvider }.distinctUntilChanged(), registry.revision, refreshVersion) { id, _, refresh -> id to refresh }
+                .flatMapLatest { (id, refresh) ->
                     val provider = registry.provider(id)
                     ((provider as? AccountRevisionCapability)?.accountRevision ?: flowOf(null))
-                        .map { Triple(id, provider, it) }
-                }.collectLatest { (id, provider, revision) ->
+                        .map { revision -> Triple(id, provider, revision) to
+                            (forcedRefreshVersion.takeIf { it > completedForcedRefresh && it <= refresh } ?: 0L) }
+                }.collectLatest { (selection, forceThrough) ->
+                    val (id, provider, revision) = selection
                     val owner = Triple(provider, provider?.version, revision)
                     val account = mutableState.value.account.takeIf {
                         mutableState.value.providerId == id && displayedOwner?.first === provider &&
@@ -67,9 +73,21 @@ class SourceProfileViewModel internal constructor(
                         return@collectLatest
                     }
                     mutableState.value = base.copy(loading = true)
-                    try { mutableState.value = base.copy(account = readAccount(id)) }
+                    suspend fun ownerCurrent(): Boolean = registry.provider(id) === provider && provider.version == owner.second &&
+                        (provider as? AccountRevisionCapability)?.accountRevision?.first() == revision
+                    try {
+                        val current = readAccount(id, forceThrough > 0)
+                        currentCoroutineContext().ensureActive()
+                        if (ownerCurrent()) {
+                            completedForcedRefresh = maxOf(completedForcedRefresh, forceThrough)
+                            mutableState.value = base.copy(account = current)
+                        }
+                    }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        if (!ownerCurrent()) return@collectLatest
+                        completedForcedRefresh = maxOf(completedForcedRefresh, forceThrough)
                         val code = error.sourceCode()
                         mutableState.value = base.copy(
                             account = base.account.takeUnless { code == SourceErrorCode.AUTH_REQUIRED || code == SourceErrorCode.AUTH_EXPIRED },
@@ -79,7 +97,13 @@ class SourceProfileViewModel internal constructor(
                 }
         }
     }
-    fun refresh() { refreshVersion.update { it + 1 } }
+    fun refresh() = refresh(force = true)
+
+    fun refresh(force: Boolean) {
+        val next = refreshVersion.value + 1
+        if (force) forcedRefreshVersion = next
+        refreshVersion.value = next
+    }
 
     suspend fun exportSession(providerId: String): Pair<String, String> = exportAccount(providerId)
 }

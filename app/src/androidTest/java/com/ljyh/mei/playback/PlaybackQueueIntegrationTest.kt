@@ -677,7 +677,8 @@ class PlaybackQueueIntegrationTest {
             val provider = ShuffleProvider()
             val router = SourceRouter(ProviderRegistry(listOf(provider)))
             val canonical = (0 until 90).map { provider.track(it).ref }
-            val responses = List(3) { CompletableDeferred<SourceShufflePage>() }
+            val responses = List(5) { CompletableDeferred<SourceShufflePage>() }
+            val returned = List(5) { CompletableDeferred<Unit>() }
             val requests = CopyOnWriteArrayList<List<TrackRef>?>()
             var identityRequests = 0
             var opened = 0
@@ -696,7 +697,7 @@ class PlaybackQueueIntegrationTest {
                     collection: LibraryCollection?, canonicalIds: List<TrackRef>?): SourceShufflePage {
                     val index = requests.size
                     requests += canonicalIds
-                    return responses[index].await()
+                    return responses[index].await().also { returned[index].complete(Unit) }
                 }
             }
             Fixture(sourceRouter = router, queueSession = { opened++; session }, shuffleRandom = Random(42)).use { fixture ->
@@ -730,21 +731,22 @@ class PlaybackQueueIntegrationTest {
                 await("first authoritative source order") { order() == firstOrder }
                 val identitiesAfterLearning = identityRequests
                 val ownersAfterLearning = opened
-                for (repeat in 1..2) {
+                for (repeat in 1..4) {
+                    val freshUniform = repeat == 1 || repeat == 3
                     val prefix = onMain {
-                        if (repeat == 1) fixture.manager.setShuffleModeEnabled(false)
+                        if (freshUniform) fixture.manager.setShuffleModeEnabled(false)
                         else {
                             fixture.player.seekToDefaultPosition(fixture.player.playbackOrderIndices()[1])
                             fixture.player.seekTo(fixture.player.currentMediaItemIndex, 350L)
                             fixture.manager.setCloudShuffleEnabled(false)
                         }
-                        if (repeat == 1) listOf(requireNotNull(fixture.player.currentMediaItem?.let { TrackRefCodec.decode(it.mediaId) }))
+                        if (freshUniform) listOf(requireNotNull(fixture.player.currentMediaItem?.let { TrackRefCodec.decode(it.mediaId) }))
                         else order().take(2)
                     }
-                    if (repeat == 1) await("shuffle disabled") { !fixture.player.shuffleModeEnabled }
+                    if (freshUniform) await("shuffle disabled") { !fixture.player.shuffleModeEnabled }
                     else await("complete cached local order") { fixture.player.shuffleModeEnabled }
                     val playingEntry = onMain {
-                        if (repeat == 1) fixture.manager.setShuffleModeEnabled(true)
+                        if (freshUniform) fixture.manager.setShuffleModeEnabled(true)
                         else fixture.manager.setCloudShuffleEnabled(true)
                         requireNotNull(fixture.player.currentMediaItem?.queueEntryId)
                     }
@@ -761,9 +763,10 @@ class PlaybackQueueIntegrationTest {
                     assertEquals(identitiesAfterLearning, identityRequests)
                     assertEquals(ownersAfterLearning, opened)
                     val sourceOrder = if (repeat == 1) canonical.drop(30) + canonical.take(30) else canonical.reversed()
-                    val expected = prefix + sourceOrder.filterNot { it in prefix }
-                    responses[repeat].complete(SourceShufflePage(sourceOrder, initial, emptySet()))
-                    await("source order replaces the immediate local order $repeat") { order() == expected }
+                    val expected = if (repeat == 3) onMain { order() } else prefix + sourceOrder.filterNot { it in prefix }
+                    responses[repeat].complete(SourceShufflePage(sourceOrder, initial, emptySet(), usesUniformFallback = repeat >= 3))
+                    runBlocking { withTimeout(5_000) { returned[repeat].await() } }
+                    await("source or uniform fallback order $repeat") { order() == expected }
                     onMain {
                         assertEquals(playingEntry, fixture.player.currentMediaItem?.queueEntryId)
                         assertEquals(350L, fixture.player.currentPosition)

@@ -44,6 +44,8 @@ data class PluginManifest(
     val sessionKeys: Set<String> = emptySet(),
     val sessionCookieNames: Map<String, Set<String>> = emptyMap(),
     val linkHosts: Set<String> = emptySet(),
+    val catalogBatchSize: Int = 30,
+    val discardStorageKeys: Set<String> = emptySet(),
 ) {
     val supported: Boolean get() = apiVersion in 1..2
     val sourceCapabilities: Set<SourceCapability> get() = capabilities.mapNotNull(CAPABILITIES::get).toSet()
@@ -105,6 +107,8 @@ data class PluginManifest(
                 if (!raw.has("features")) raw.add("features", com.google.gson.JsonObject())
                 if (!raw.has("featureRoutes")) raw.add("featureRoutes", com.google.gson.JsonArray())
                 if (!raw.has("sessionKeys")) raw.add("sessionKeys", com.google.gson.JsonArray())
+                if (!raw.has("catalogBatchSize")) raw.addProperty("catalogBatchSize", 30)
+                if (!raw.has("discardStorageKeys")) raw.add("discardStorageKeys", com.google.gson.JsonArray())
                 if (!raw.has("sessionCookieNames")) raw.add("sessionCookieNames", com.google.gson.JsonObject())
                 if (!raw.has("linkHosts")) raw.add("linkHosts", com.google.gson.JsonArray())
                 val manifest = Gson().fromJson(raw, PluginManifest::class.java)
@@ -133,6 +137,10 @@ data class PluginManifest(
                 require(manifest.features.isEmpty() && manifest.featureRoutes.isEmpty() || "feature.invoke" in manifest.capabilities)
                 require(manifest.sessionKeys.size <= 32 && manifest.sessionKeys.all(KEY::matches))
                 require(manifest.sessionKeys.isEmpty() || manifest.permissions.storage)
+                require(manifest.catalogBatchSize in 1..1000 && (manifest.catalogBatchSize == 30 ||
+                    manifest.apiVersion >= 2 && "catalog.tracks" in manifest.capabilities))
+                require(manifest.discardStorageKeys.size <= 32 && manifest.discardStorageKeys.all(KEY::matches) &&
+                    manifest.discardStorageKeys.intersect(manifest.sessionKeys).isEmpty())
                 require(manifest.sessionCookieNames.size <= 16 && manifest.sessionCookieNames.all { (key, names) ->
                     key in manifest.sessionKeys && names.isNotEmpty() && names.size <= 16 && names.all {
                         Regex("[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}").matches(it)
