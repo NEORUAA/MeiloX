@@ -329,7 +329,10 @@ internal class ScriptMusicProvider(
             if (page.refresh) invalidateCatalog(read)
             val cached = catalog.snapshot(read.owner, ref.playlistId) { ensureCatalog(read) }
             val snapshot = cached ?: if ("playlist.get" in manifest.capabilities)
-                loadPlaylist(ref, read, if (page.offset == 0 && page.cursor == null) page.limit.coerceIn(1, 5000) else 1) else null
+                // The complete index is enough to hydrate the requested page through catalog.tracks.
+                // Never couple the first page size to playlist metadata: large lists would make
+                // the initial playlist.get response unnecessarily expensive and race the header load.
+                loadPlaylist(ref, read, metadataLimit = 1) else null
             snapshot?.ids?.let { indexedPage(it, page, read) } ?: cachedPage("playlist.tracks", ref.playlistId, page, read) {
                 parsePage(invoke("playlist.tracks", refParams("playlistId", ref, page)).asJsonObject, page) {
                     SourceItem.TrackItem(parseCatalogTrack(it))
@@ -503,7 +506,7 @@ internal class ScriptMusicProvider(
         return snapshot
     }
 
-    private suspend fun loadPlaylist(ref: PlaylistRef, read: CatalogRead, metadataLimit: Int = 30): SourceCatalogCache.Snapshot {
+    private suspend fun loadPlaylist(ref: PlaylistRef, read: CatalogRead, metadataLimit: Int = 1): SourceCatalogCache.Snapshot {
         val value = metadataResult("playlist.get", refParams("playlistId", ref), metadataLimit).asJsonObject
         if (value.get("playlistId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString != ref.playlistId) invalid()
         return storeSnapshot(value, read, metadataLimit)
