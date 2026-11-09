@@ -27,7 +27,7 @@ The host accepts only these root files and supported audio files directly inside
   "entry": "index.js",
   "capabilities": ["catalog.search", "catalog.track", "playback.resolve", "feature.invoke"],
   "permissions": {
-    "network": ["api.example.com", "audio.example.com"],
+    "network": ["api.example.com", "*.audio.example.com"],
     "storage": true,
     "effects": ["web.auth"]
   },
@@ -51,6 +51,8 @@ The [source registry](https://github.com/NEORUAA/MeiloX-Source-Registry) publish
 
 Startup checks run after source initialization in the background. Automatic updates require a matching, payload-bound repository origin and no additional permissions, capabilities or required configuration. Session fingerprint contract changes also require review. A file-imported source can acquire origin only after its exact current payload matches the digest-verified same-version market package, or after an explicit reviewed market update. Reimporting a file clears market origin.
 
+Changing an exact network grant to a wildcard still requires permission review. Wildcard grants require a host supporting this syntax; older hosts reject the manifest.
+
 Updates preserve private configuration and enabled state. Removed sources are not reinstalled. Download, digest, index or update failures retain the installed version and do not fail the source's other operations. A directory-replacement journal recovers an interrupted installation. Automatic replacement defers while the source owns the current paused/playing track or queue restoration; it does not interrupt already opened audio.
 
 ## Core content
@@ -73,6 +75,8 @@ Updates preserve private configuration and enabled state. Removed sources are no
 
 A tagged item is `{type:'track', track:{...}}`, or its `album`, `artist` or `playlist` equivalent. Pages contain `{items, hasMore, nextCursor?}`. Search and library types must match manifest `searchTypes`/`collectionTypes`. The host validates identities, collection/edit capabilities, counts and advancing cursors. Playlist positions retain duplicate recordings.
 
+`catalog.tracks` returns a track array in requested order, omitting unavailable IDs. Declare both `catalog.track` and `catalog.tracks` before setting a nondefault `catalogBatchSize`. `discardStorageKeys` lists obsolete source storage keys for host migration and must not overlap `sessionKeys`.
+
 `playlist.get` may also return a complete `trackIds` array and available normalized `tracks`. The host may request `metadataLimit` from 1 to 5000; absent values retain the source's small default. `library.likedTracks` may accept `metadataOnly: true` with the same snapshot result, including the resolved `playlistId`. Older plugins can continue returning their existing page. The host owns complete indexes, metadata, pages, prefetching and invalidation, scoped to provider/configuration/account. These values are not script storage or a JavaScript cache API. Explicit refresh and mutations invalidate host snapshots, and late responses cannot repopulate a retired cache generation.
 
 The host's process-local catalog cache has a 4 MiB weighted metadata budget and at most 8192 entries; pages expire after 60 seconds. Verified account identity stays in a separate owner-lifetime slot. Normal browsing can request bulk playlist metadata and fill at most one missing batch for collections of at most 5000 IDs. A cold shuffle identity lookup requests only the complete index with `metadataLimit: 1`; it does not wait for every song's metadata. Sources without catalog hydration retain their original playlist pagination.
@@ -84,6 +88,37 @@ Hero sections may also contain up to 30 source-owned cards with typed content, d
 Audio resources report the **actual** quality and may include per-resource headers, expiry, size, content identity, MIME type and `cachePolicy: 'ALLOW' | 'NO_STORE'`. The host converts the URL/headers to an opaque audio handle before player/cache/download persistence. `asset://tone.wav` resolves only inside the owning package. `NO_STORE` resources cannot be downloaded or cached.
 
 `playback.qualities` may return a string array or `{items, nextCursor?}`. `playback.resolve` may return `{nextCursor}` while continuing a bounded quality ladder. The host accepts at most three quality segments, rejects repeated/oversized cursors, and limits the combined quality list to 32 entries. These cursors are separate from host-effect continuations.
+
+### API 2 catalog example
+
+The packaged [offline sample](../samples/music-source-plugin/index.js) intentionally stays on API 1 to exercise compatibility. The following independent API 2 fixture shows the optional catalog extensions. Declare `catalog.track`, `catalog.tracks`, `playlist.get` and `library.likedTracks`; set `catalogBatchSize: 1000`. Compile this TypeScript to `index.js`; only the emitted JavaScript executes. Its constants stand in for service responses, not a persistent script cache.
+
+```typescript
+import type { Plugin, Track, PlaylistSnapshot } from '../samples/music-source-plugin/source-plugin';
+
+const track: Track = { trackId: 'demo:1', title: 'Demo', artists: ['Example'], durationMs: 1000 };
+const snapshot: PlaylistSnapshot = {
+  playlistId: 'demo:liked', title: 'Liked', trackCount: 2,
+  trackIds: ['demo:1', 'demo:1'], tracks: [track]
+};
+const plugin: Plugin = {
+  'catalog.track'({ trackId }) { return trackId === track.trackId ? track : null; },
+  'catalog.tracks'({ trackIds }) {
+    return trackIds.filter(id => id === track.trackId).map(() => track);
+  },
+  'playlist.get'({ playlistId, metadataLimit }) {
+    if (playlistId !== snapshot.playlistId) return { error: 'NOT_FOUND' };
+    return { ...snapshot, tracks: snapshot.tracks?.slice(0, metadataLimit ?? 1) };
+  },
+  'library.likedTracks'({ metadataOnly, metadataLimit }) {
+    if (metadataOnly) return { ...snapshot, tracks: snapshot.tracks?.slice(0, metadataLimit ?? 1) };
+    return { items: [{ type: 'track', track }, { type: 'track', track }], hasMore: false };
+  }
+};
+globalThis.sourcePlugin = plugin;
+```
+
+The host retains the complete index (including repeated positions), reuses metadata and hydrates only the needed batch. A real source reads its own service and session; `context.account.userId` can supply the host-verified account ID. It does not persist playlist indexes, profiles, listening history or random-order caches in `context.storage`. Configure `discardStorageKeys` when retiring old cache keys, while keeping session credentials intact. Runtime heap and result budgets are described below; they do not require script-side caching.
 
 ## JavaScript and network requests
 
@@ -102,7 +137,7 @@ globalThis.sourcePlugin = {
     };
   },
   onResponse(operation, response, state, context) {
-    if (response.error) return {error: response.error};
+    if (response.error) return {error: response.error === 'RESPONSE_TOO_LARGE' ? 'INVALID_RESPONSE' : response.error};
     if (response.status === 401) return {error: 'AUTH_EXPIRED'};
     return {items: [], hasMore: false};
   }
@@ -116,7 +151,7 @@ A host request contains `url`, optional method/headers/body and JSON `state`. At
 - `errorResponse: true` converts transport `NETWORK`/`TIMEOUT` and oversized transport bodies (`RESPONSE_TOO_LARGE`) into `{status:0,body:'',error:<code>}`. That response has no required header/cookie fields. Cancellation, permission failure and other failures stop the operation. Recovery must not blindly replay writes.
 - `sdk` and bounded `sdkConfig` select an explicitly permitted host codec. They do not bypass hostname, DNS, redirect or byte limits. `netease.transport` accepts `mode` (`api`, `eapi`, `weapi`), `signingPath`, a fresh `weapiKey`, and JSON-encoded `formFields`. The source supplies the complete URL, headers, cookies, client profile and plaintext body; the host only encodes/decodes bytes.
 
-Network grants are exact hostnames, with at most 32 per manifest. HTTPS on port 443 is required. Userinfo, fragments, IP literals, wildcards and local names are rejected. The restricted client checks system DNS at connection time, permits public addresses and the system proxy's synthetic `198.18.0.0/15` Fake-IP range, disables explicit HTTP proxies and rejects redirects. Normal TLS hostname verification remains required; scripts cannot supply DNS answers or connect to literal Fake-IP addresses. Other non-public addresses remain blocked. Requests are capped at 256 KiB raw and API responses at 4 MiB raw; callback envelopes remain subject to the result limit, including Base64 overhead. Artwork uses its separate host resource policy. Forbidden headers and CR/LF injection are rejected. The client limits concurrency to two, connection timeout to eight seconds, read/write to ten seconds and a call to fifteen seconds.
+Network grants are exact hostnames or subtree patterns with a single leading `*.`, with at most 32 per manifest. A subtree grant matches one or more labels at any depth and excludes its apex: `*.music.126.net` permits `m803.music.126.net` and `deep.m803.music.126.net`, but not `music.126.net` or a lookalike suffix. Wildcards cannot target public suffixes such as `*.com`, `*.co.uk` or `*.github.io`. Actual request URLs must contain concrete hosts. HTTPS on port 443 is required. Userinfo, fragments, IP literals and local names are rejected. The restricted client checks system DNS at connection time, permits public addresses and the system proxy's synthetic `198.18.0.0/15` Fake-IP range, disables explicit HTTP proxies and rejects redirects. Normal TLS hostname verification remains required; scripts cannot supply DNS answers or connect to literal Fake-IP addresses. Other non-public addresses remain blocked. Requests are capped at 256 KiB raw and API responses at 4 MiB raw; callback envelopes remain subject to the result limit, including Base64 overhead. Artwork uses its separate host resource policy. Forbidden headers and CR/LF injection are rejected. The client limits concurrency to two, connection timeout to eight seconds, read/write to ten seconds and a call to fifteen seconds.
 
 Optional artwork outside those grants is omitted without opening a connection. A rejected audio resource produces an operation-level `INVALID_RESPONSE` and leaves other source capabilities available. An actual script network request outside its grants remains a plugin permission violation.
 
@@ -199,7 +234,7 @@ The vendor security runtime used by `netease.securityHeaders` has process-wide s
 
 ### Web effects
 
-Web parameters include a URL/title, page `allowedHosts`, `cookieHosts`, explicit returned `cookieNames`, this source's `cookieHeaders`, fixed `bridgeAliases`, and typed `urlMappings`. Host manifest domains bound all resource loads; page host restrictions do not implicitly authorize extra static-resource domains. `web.auth` requires a cookie return whitelist. The result is `{closed:true,cookies:{name:value},cookie:'name=value; ...'}` from that profile only.
+Web parameters include a URL/title, page `allowedHosts`, `cookieHosts`, explicit returned `cookieNames`, this source's `cookieHeaders`, fixed `bridgeAliases`, and typed `urlMappings`. Host manifest network grants bound all resource loads. Page `allowedHosts` may narrow those exact or subtree grants, but cannot broaden them; page restrictions do not implicitly authorize extra static-resource domains. Returned `cookieHosts` must be concrete hosts inside the page scope. `cookieHeaders` keys must be concrete hosts covered by the manifest grants; each header seeds only its named host, never an entire wildcard subtree. `web.auth` requires a cookie return whitelist. The result is `{closed:true,cookies:{name:value},cookie:'name=value; ...'}` from that profile only.
 
 The host requires AndroidX WebKit multi-profile and document-start support. Each interaction uses an isolated profile and destroys it on completion/cancellation. Chromium and service-worker direct network loads are blocked; a fixed host shim mediates resource/fetch/XHR/form traffic through domain/DNS/redirect checks. There is no fallback to the global CookieManager.
 
@@ -219,7 +254,7 @@ The separate [MeiloX-Netease-Source](https://github.com/NEORUAA/MeiloX-Netease-S
 
 ## Links and lyrics
 
-`links.resolve` requires exact `linkHosts`, each also present in network permissions. The host extracts a bounded set of URLs from pasted/shared text and sends only a matching URL to its declared owner. Ambiguous hosts use the user's explicitly selected matching source. Return `{contentRef:{providerId,type,contentId}}`, `{featureRoute,parameters}`, or `null`; cross-provider targets and undeclared feature routes are rejected. Link results retain provider/account ownership through navigation.
+`links.resolve` requires exact, concrete `linkHosts`, each covered by a declared network grant. A network subtree grant does not widen link routing beyond those exact link hosts. The host extracts a bounded set of URLs from pasted/shared text and sends only a matching URL to its declared owner. Ambiguous hosts use the user's explicitly selected matching source. Return `{contentRef:{providerId,type,contentId}}`, `{featureRoute,parameters}`, or `null`; cross-provider targets and undeclared feature routes are rejected. Link results retain provider/account ownership through navigation.
 
 The host lyric repository remains a multi-source system for every playback source. NetEase, QQ and extended lyric selection/matching/cache behavior does not depend on the preferred browse/search source or on installing the NetEase content plugin. Optional `lyrics.get` adds provider lyrics; it does not replace the existing lyric choices. Foreign numeric track IDs are never treated as NetEase lyric identities.
 

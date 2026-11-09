@@ -131,13 +131,14 @@ internal class SourceWebRecipe(
     fun checkedUrl(value: String, base: String? = null): String {
         if (value.length > 8192 || value.any { it == '\u0000' || it == '\r' || it == '\n' }) denied()
         val uri = runCatching { if (base == null) URI(value) else URI(base).resolve(value) }.getOrElse { denied() }
-        if (uri.scheme != "https" || uri.host !in domains || uri.rawUserInfo != null || uri.port !in setOf(-1, 443)) denied()
-        ScriptNetworkPolicy.validateDomain(uri.host)
+        val host = uri.host ?: denied()
+        if (uri.scheme != "https" || !ScriptNetworkPolicy.isHostAllowed(host, domains) ||
+            uri.rawUserInfo != null || uri.port !in setOf(-1, 443)) denied()
         return uri.toASCIIString()
     }
 
     fun checkedPageUrl(value: String, base: String? = null): String = checkedUrl(value, base).also {
-        if (URI(it).host !in pageDomains) denied()
+        if (!ScriptNetworkPolicy.isHostAllowed(URI(it).host, pageDomains)) denied()
     }
 
     fun navigation(value: String, owner: SourceWebOwner): SourceWebNavigation? {
@@ -155,14 +156,15 @@ internal class SourceWebRecipe(
 
         fun parse(effect: SourceHostEffect, owner: SourceWebOwner): SourceWebRecipe {
             val params = effect.parameters
-            val approved = owner.approvedDomains.toSet().onEach { ScriptNetworkPolicy.validateDomain(it) }
+            val approved = owner.approvedDomains.toSet().onEach { ScriptNetworkPolicy.validateGrant(it) }
             if (approved.isEmpty() || approved.size > 64 || owner.sdkNamespace.length !in 1..128) denied()
             val requested = params.stringSet("allowedHosts", 64).ifEmpty { approved }
-            if (!approved.containsAll(requested)) denied()
+                .onEach { ScriptNetworkPolicy.validateGrant(it) }
+            if (requested.any { !ScriptNetworkPolicy.isGrantCovered(it, approved) }) denied()
             val cookieHosts = params.stringSet("cookieHosts", 32).ifEmpty {
                 setOf(runCatching { URI(params.string("url")).host }.getOrNull() ?: denied())
-            }
-            if (!requested.containsAll(cookieHosts)) denied()
+            }.onEach { ScriptNetworkPolicy.validateDomain(it) }
+            if (cookieHosts.any { !ScriptNetworkPolicy.isHostAllowed(it, requested) }) denied()
             val names = params.stringSet("cookieNames", 32)
             if (names.any { !Regex("[A-Za-z0-9_.-]{1,80}").matches(it) } || effect.type == "web.auth" && names.isEmpty()) denied()
             val aliases = params.get("bridgeAliases")?.let { element ->

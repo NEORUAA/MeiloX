@@ -1,6 +1,6 @@
 # Source refactor validation
 
-This report distinguishes the current removable-source refactor from earlier P6
+This report records the 2026-11-07 removable-source refactor separately from earlier P6
 and API 2 checkpoints. Earlier test totals and screenshots do not describe the
 current build unless explicitly repeated below.
 
@@ -37,7 +37,7 @@ user's AVD launcher and configuration remain unchanged.
 The standalone producers are maintained in the separate
 `MeiloX-Netease-Source` and `MeiloX-QQMusic-Source` repositories.
 
-## Current verified results
+## Verified results: 2026-11-07
 
 Verified on 2026-11-07 against the final removable-source and marketplace changes.
 
@@ -56,7 +56,7 @@ Verified on 2026-11-07 against the final removable-source and marketplace change
 | Registry | Offline schema/contract validation and GitHub metadata workflow passed |
 
 The earlier failing checkpoints were resolved before this final batch. NetEase's
-missing image/audio CDN declarations were corrected with exact hostnames. Optional
+missing image/audio CDN declarations were corrected with exact hostnames at that checkpoint. The current network contract also supports reviewed `*.` subtree grants; see [Source plugin API](source-plugin-spec.md#javascript-and-network-requests). Optional
 artwork rejection no longer discards a valid page; rejected audio metadata fails
 only that operation. Direct script network permission violations still fail closed.
 The QQ favorite acknowledgement and canonical status readback, finite home feed,

@@ -90,6 +90,11 @@ class SourceUpdatesTest {
         assertTrue(sourceUpdateReviewReasons(expanded, reduced, entry.repository, entry.repository).isEmpty())
         assertEquals(setOf(SourceUpdateReviewReason.SESSION), sourceUpdateReviewReasons(expanded,
             expanded.copy(sessionKeys = emptySet(), sessionCookieNames = emptyMap()), entry.repository, entry.repository))
+        val wildcard = next.copy(permissions = next.permissions.copy(network = listOf("*.example.com")))
+        assertEquals(setOf(SourceUpdateReviewReason.NETWORK),
+            sourceUpdateReviewReasons(previous, wildcard, entry.repository, entry.repository))
+        assertTrue(sourceUpdateReviewReasons(wildcard, wildcard.copy(version = "1.2.0"),
+            entry.repository, entry.repository).isEmpty())
     }
 
     @Test

@@ -918,7 +918,7 @@ class ScriptPluginPolicyTest {
             minimal.replace("\"example.source\"", "\"local\""),
             minimal.replace("\"catalog.search\"", "\"android.exec\""),
             minimal.replace("\"apiVersion\":1", "\"apiVersion\":1,\"entry\":\"../index.js\""),
-            minimal.dropLast(1) + ",\"permissions\":{\"network\":[\"*.example.com\"]}}",
+            minimal.dropLast(1) + ",\"permissions\":{\"network\":[\"api.*.example.com\"]}}",
         ).forEach { json -> rejects { PluginManifest.parse(json) } }
     }
 
@@ -934,6 +934,39 @@ class ScriptPluginPolicyTest {
         rejects { policy.validateHeaders(mapOf("Host" to "localhost")) }
         rejects { policy.validateHeaders(mapOf("Authorization" to "Bearer abc\r\nInjected: yes")) }
         policy.validateHeaders(mapOf("Authorization" to "Bearer plugin-owned-secret"))
+        assertFalse(policy.client.followRedirects)
+        assertFalse(policy.client.followSslRedirects)
+    }
+
+    @Test
+    fun wildcardNetworkGrantsCoverOnlyConcreteSubdomainsOfRegistrableDomains() {
+        val manifest = PluginManifest.parse(minimal.dropLast(1) +
+            ",\"permissions\":{\"network\":[\"*.music.126.net\"]}}")
+        val policy = ScriptNetworkPolicy(manifest.permissions.network)
+        listOf("m803.music.126.net", "p100.music.126.net", "edge.m803.music.126.net").forEach { host ->
+            assertEquals(host, policy.validateUrl("https://$host/audio.flac").host)
+        }
+        listOf("music.126.net", "badmusic.126.net", "m803.music.126.net.evil.com", "evil.126.net",
+            "*.music.126.net", "127.0.0.1").forEach { host ->
+            rejects { policy.validateUrl("https://$host/audio.flac") }
+        }
+        listOf("*", "*.com", "*.co.uk", "*.github.io", "api.*.126.net", "*music.126.net", "*.*.126.net",
+            "*.127.0.0.1", "*.localhost", "*.home.local", "*.MUSIC.126.NET", "*.music.126.net.").forEach { grant ->
+            rejects { ScriptNetworkPolicy(listOf(grant)) }
+            rejects { PluginManifest.parse(minimal.dropLast(1) + ",\"permissions\":{\"network\":[\"$grant\"]}}") }
+        }
+        val grants = listOf("*.music.126.net", "api.example.com")
+        listOf("*.music.126.net", "*.edge.music.126.net", "m803.music.126.net", "api.example.com").forEach {
+            assertTrue(it, ScriptNetworkPolicy.isGrantCovered(it, grants))
+        }
+        listOf("music.126.net", "*.126.net", "*.example.com", "evil.example.com").forEach {
+            assertFalse(it, ScriptNetworkPolicy.isGrantCovered(it, grants))
+        }
+        val linked = minimal.replace("\"apiVersion\":1", "\"apiVersion\":2")
+            .replace("\"catalog.search\"", "\"catalog.search\",\"links.resolve\"").dropLast(1) +
+            ",\"permissions\":{\"network\":[\"*.music.126.net\"]},\"linkHosts\":[\"m803.music.126.net\"]}"
+        assertEquals(setOf("m803.music.126.net"), PluginManifest.parse(linked).linkHosts)
+        rejects { PluginManifest.parse(linked.replace("\"linkHosts\":[\"m803.music.126.net\"]", "\"linkHosts\":[\"*.music.126.net\"]")) }
         assertFalse(policy.client.followRedirects)
         assertFalse(policy.client.followSslRedirects)
     }

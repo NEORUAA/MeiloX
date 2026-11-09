@@ -4,7 +4,10 @@ export type JsonObject = { [key: string]: JsonValue };
 export interface Context {
   readonly apiVersion: 1 | 2;
   readonly config: Readonly<Record<string, string>>;
+  /** Protocol sessions/continuations only; application data and caches belong to the host. */
   readonly storage: Readonly<Record<string, string>>;
+  /** Verified identity for this source session; absent until the host verifies the account. */
+  readonly account?: Readonly<{ userId?: string }>;
   /** Fresh standard Base64 of 256 CSPRNG bytes per evaluation, including onResponse.
    * Consume once for nonces/IVs. Never persist the pool or substitute Math.random. */
   readonly secureRandomBase64: string;
@@ -35,6 +38,8 @@ export interface Playlist {
   playlistId: string; title: string; artworkUrl?: string; creatorName?: string;
   trackCount?: number; description?: string; editableActions?: PlaylistEditAction[]; playCount?: number | null;
 }
+/** Complete ordered IDs (including repeats) and optional hydrated metadata, owned/cached by the host. */
+export interface PlaylistSnapshot extends Playlist { trackIds?: string[]; tracks?: Track[] }
 export interface Album {
   albumId: string; title: string; artworkUrl?: string;
   artists?: Array<string | { name: string; artistId?: string }>; trackCount?: number;
@@ -88,7 +93,7 @@ export interface NetworkRequest {
     /** JSON-encoded string map appended to the encoded form. */
     formFields?: string;
   };
-  /** Only NETWORK/TIMEOUT become status:0 responses. Cancellation and permission denial still stop execution. */
+  /** NETWORK/TIMEOUT and oversized transport bodies become status:0 responses. Cancellation and permission denial stop execution. */
   errorResponse?: boolean;
 }
 export interface HostRequest { request: NetworkRequest; state?: JsonValue }
@@ -97,7 +102,7 @@ export interface HttpHostResponse {
   bodyBase64?: string; error?: never;
 }
 export interface FailedHostResponse {
-  status: 0; body: ''; error: 'NETWORK' | 'TIMEOUT'; headers?: never; setCookies?: never; bodyBase64?: never;
+  status: 0; body: ''; error: 'NETWORK' | 'TIMEOUT' | 'RESPONSE_TOO_LARGE'; headers?: never; setCookies?: never; bodyBase64?: never;
 }
 export type HostResponse = HttpHostResponse | FailedHostResponse;
 
@@ -129,10 +134,14 @@ export interface FeatureInvocation { feature: string; action: string; parameters
 export type BridgeVerb = 'device.info' | 'page.info' | 'page.title' | 'page.ui' | 'navigation.open'
   | 'navigation.close' | 'session.present' | 'session.profile' | 'session.login' | 'toast.show';
 export interface WebEffectParameters {
-  url: string; title?: string; allowedHosts?: string[]; cookieHosts?: string[];
+  url: string; title?: string;
+  /** Exact hosts or *. subtrees covered by manifest grants; may only narrow page navigation. */
+  allowedHosts?: string[];
+  /** Concrete hosts inside the page scope; never wildcard patterns. */
+  cookieHosts?: string[];
   /** Explicit return whitelist, required for web.auth. Never returns the global WebView cookie store. */
   cookieNames?: string[];
-  /** This source's own cookie headers, indexed by an approved hostname. */
+  /** This source's own cookie headers, indexed by a concrete approved hostname, never a wildcard. */
   cookieHeaders?: Record<string, string>;
   bridgeAliases?: Record<string, BridgeVerb>;
   urlMappings?: Array<{ scheme: string; host: string; pathPrefix?: string; feature: string; action: string; parameters?: JsonObject }>;
@@ -150,7 +159,7 @@ export type Result<T> = T | { result: T; storage?: Record<string, string> }
 export type LinkTarget = { contentRef: ContentRef } | { featureRoute: string; parameters?: JsonObject } | null;
 export interface QualityPage { items: string[]; nextCursor?: string | null }
 export interface PlaybackContinuation { nextCursor: string }
-export type Operation = 'catalog.search' | 'catalog.track' | 'playback.resolve' | 'playback.qualities' | 'lyrics.get'
+export type Operation = 'catalog.search' | 'catalog.track' | 'catalog.tracks' | 'playback.resolve' | 'playback.qualities' | 'lyrics.get'
   | 'feed.home' | 'feed.discover' | 'album.get' | 'album.tracks' | 'artist.get' | 'artist.tracks' | 'artist.albums'
   | 'playlist.get' | 'playlist.tracks' | 'account.get' | 'library.likedTracks' | 'library.createdPlaylists'
   | 'library.savedPlaylists' | 'library.savedAlbums' | 'library.followedArtists' | 'track.liked' | 'track.like'
@@ -159,6 +168,8 @@ export type Operation = 'catalog.search' | 'catalog.track' | 'playback.resolve' 
 export interface Manifest {
   id: string; providerId?: string; name: string; author: string; version: string; apiVersion: 1 | 2;
   entry?: 'index.js'; capabilities: Operation[]; description?: string;
+  /** Up to 32 lowercase exact hosts or leading *. subtrees; excludes apex/public suffixes.
+   * Concrete HTTPS URLs, DNS and TLS checks still apply. Older hosts reject wildcard grants. */
   permissions?: { network?: string[]; storage?: boolean; nativeSdks?: Array<NetworkSdk | EffectSdk>; effects?: PrivilegedEffectType[] };
   config?: Array<{ key: string; label: string; secret?: boolean; required?: boolean }>;
   searchTypes?: ContentType[]; collectionTypes?: Array<CollectionRef['type']>;
@@ -170,7 +181,11 @@ export interface Manifest {
   sessionKeys?: string[];
   /** For a cookie-header key, only these cookie names define the account identity. */
   sessionCookieNames?: Record<string, string[]>;
-  /** Exact declared network hosts eligible for links.resolve. */
+  /** API 2 batch size, 1..1000 (default 30); requires catalog.track and catalog.tracks. */
+  catalogBatchSize?: number;
+  /** Obsolete private storage keys to remove; cannot overlap sessionKeys. */
+  discardStorageKeys?: string[];
+  /** Concrete hosts eligible for links.resolve, covered by network grants. */
   linkHosts?: string[];
 }
 
@@ -310,6 +325,8 @@ export interface Plugin {
   /** API 1 returns bare tracks. API 2 returns tagged items matching params.type. */
   'catalog.search'?(params: PageRequest & { query: string; type?: ContentType }, context: Context): Result<Page<Track> | Page<SourceItem>>;
   'catalog.track'?(params: { trackId: string }, context: Context): Result<Track | null>;
+  /** API 2. Return requested tracks in order, omit unavailable IDs; no script metadata cache. */
+  'catalog.tracks'?(params: { trackIds: string[] }, context: Context): Result<Track[]>;
   'playback.resolve'?(params: { trackId: string; quality: string; cursor?: string }, context: Context): Result<AudioResource | PlaybackContinuation>;
   'playback.qualities'?(params: { trackId: string; cursor?: string }, context: Context): Result<string[] | QualityPage>;
   'lyrics.get'?(params: { trackId: string }, context: Context): Result<{ text: string; translation?: string } | null>;
@@ -320,10 +337,12 @@ export interface Plugin {
   'artist.get'?(params: { artistId: string }, context: Context): Result<Artist>;
   'artist.tracks'?(params: PageRequest & { artistId: string }, context: Context): Result<Page<Track>>;
   'artist.albums'?(params: PageRequest & { artistId: string }, context: Context): Result<Page<Album>>;
-  'playlist.get'?(params: { playlistId: string }, context: Context): Result<Playlist>;
+  /** metadataLimit is 1..5000; return the complete index even when metadata is limited. */
+  'playlist.get'?(params: { playlistId: string; metadataLimit?: number }, context: Context): Result<PlaylistSnapshot>;
   'playlist.tracks'?(params: PageRequest & { playlistId: string }, context: Context): Result<Page<Track>>;
   'account.get'?(params: Record<string, never>, context: Context): Result<Account | null>;
-  'library.likedTracks'?(params: PageRequest, context: Context): Result<Page<SourceItem>>;
+  /** metadataOnly requests the liked playlist snapshot; older sources may return their usual page. */
+  'library.likedTracks'?(params: PageRequest & { metadataOnly?: boolean; metadataLimit?: number }, context: Context): Result<Page<SourceItem> | PlaylistSnapshot>;
   'library.createdPlaylists'?(params: PageRequest, context: Context): Result<Page<SourceItem>>;
   'library.savedPlaylists'?(params: PageRequest, context: Context): Result<Page<SourceItem>>;
   'library.savedAlbums'?(params: PageRequest, context: Context): Result<Page<SourceItem>>;

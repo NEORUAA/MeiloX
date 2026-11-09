@@ -34,6 +34,8 @@ class ScriptNetworkPolicy(
     private val nativeSdks: Set<String> = emptySet(),
     private val configuration: () -> Map<String, String> = { emptyMap() },
 ) {
+    init { domains.forEach(::validateGrant) }
+
     private val concurrency = Semaphore(2)
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
@@ -226,8 +228,7 @@ class ScriptNetworkPolicy(
         SourceException(if (error is InterruptedIOException) SourceErrorCode.TIMEOUT else SourceErrorCode.NETWORK)
 
     private fun validateHost(host: String) {
-        if (domains.none { it.equals(host, ignoreCase = true) }) denied()
-        validateDomain(host)
+        if (!isHostAllowed(host, domains)) denied()
     }
 
     companion object {
@@ -250,6 +251,35 @@ class ScriptNetworkPolicy(
 
         const val MAX_REQUEST_BYTES = 256 * 1024
         const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+        /** A wildcard grants subdomains only and cannot target a public suffix. */
+        fun validateGrant(grant: String) {
+            if (grant.startsWith("*.")) {
+                if (grant.length > 253) denied()
+                val suffix = grant.removePrefix("*.")
+                validateDomain(suffix)
+                if ("https://$suffix".toHttpUrlOrNull()?.topPrivateDomain() == null) denied()
+            } else validateDomain(grant)
+        }
+
+        /** Callers validate grants once when accepting the manifest or web recipe. */
+        internal fun isHostAllowed(host: String, grants: Collection<String>): Boolean {
+            if (runCatching { validateDomain(host) }.isFailure) return false
+            return grants.any { grant ->
+                host == grant || grant.startsWith("*.") && host.endsWith(grant.removePrefix("*"))
+            }
+        }
+
+        /** Web pages may request a narrower grant, never broaden their owner's authority. */
+        internal fun isGrantCovered(grant: String, grants: Collection<String>): Boolean {
+            if (runCatching { validateGrant(grant) }.isFailure) return false
+            if (!grant.startsWith("*.")) return isHostAllowed(grant, grants)
+            val suffix = grant.removePrefix("*.")
+            return grants.any { approved ->
+                approved.startsWith("*.") && (grant == approved || suffix.endsWith(approved.removePrefix("*")))
+            }
+        }
+
         fun validateDomain(domain: String) {
             if (domain.length !in 4..253 || domain != domain.lowercase() || domain.endsWith('.') ||
                 !domain.contains('.') || domain.contains('*') || domain.contains(':') ||

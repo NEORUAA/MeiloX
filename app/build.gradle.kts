@@ -157,6 +157,15 @@ configurations.all {
     exclude("com.soywiz.korlibs.krypto","krypto-android")
 }
 
+// Local JVM tests need OkHttp's classpath PSL resource instead of Android assets.
+val okhttpJvmForUnitTests = "com.squareup.okhttp3:okhttp-jvm:${libs.versions.loggingInterceptor.get()}"
+configurations.matching { it.name.contains("UnitTest") }.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("com.squareup.okhttp3:okhttp")).using(module(okhttpJvmForUnitTests))
+        substitute(module("com.squareup.okhttp3:okhttp-android")).using(module(okhttpJvmForUnitTests))
+    }
+}
+
 kotlin {
     compilerOptions {
         freeCompilerArgs.addAll(

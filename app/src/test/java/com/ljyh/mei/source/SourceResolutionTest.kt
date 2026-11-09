@@ -113,6 +113,39 @@ class SourceResolutionTest {
             try { recipe.checkedPageUrl(url); fail("An undeclared page URL must be blocked") }
             catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
         }
+
+        val wildcardOwner = SourceWebOwner(setOf("music.example.com", "*.cdn.example.com"), sdkNamespace = "fixture.web")
+        val wildcardRecipe = SourceWebRecipe.parse(SourceHostEffect("web.page", parameters), wildcardOwner)
+        for (url in listOf("https://m803.cdn.example.com/app.js", "https://deep.m803.cdn.example.com/app.js")) {
+            assertEquals(url, wildcardRecipe.checkedUrl(url))
+            try { wildcardRecipe.checkedPageUrl(url); fail("Resource grants must not widen page navigation") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+        for (url in listOf("https://cdn.example.com/", "https://m803.cdn.example.com.attacker.test/", "https://*.cdn.example.com/")) {
+            try { wildcardRecipe.checkedUrl(url); fail("Only concrete descendant resource hosts may match wildcard grants") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+        val narrowed = com.google.gson.JsonObject().apply {
+            addProperty("url", "https://page.tenant.cdn.example.com/account")
+            add("allowedHosts", com.google.gson.JsonArray().apply { add("*.tenant.cdn.example.com") })
+        }
+        val narrowedRecipe = SourceWebRecipe.parse(SourceHostEffect("web.page", narrowed), wildcardOwner)
+        assertEquals(setOf("page.tenant.cdn.example.com"), narrowedRecipe.cookieHosts)
+        assertEquals("https://next.tenant.cdn.example.com/", narrowedRecipe.checkedPageUrl("https://next.tenant.cdn.example.com/"))
+        assertEquals("https://other.cdn.example.com/app.js", narrowedRecipe.checkedUrl("https://other.cdn.example.com/app.js"))
+        for (url in listOf("https://other.cdn.example.com/", "https://tenant.cdn.example.com/")) {
+            try { narrowedRecipe.checkedPageUrl(url); fail("Page navigation must remain within the narrowed subtree") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+        for ((name, host) in listOf("allowedHosts" to "*.example.com", "cookieHosts" to "*.tenant.cdn.example.com",
+            "cookieHosts" to "other.cdn.example.com", "cookieHosts" to "tenant.cdn.example.com")) {
+            val invalid = narrowed.deepCopy().apply { add(name, com.google.gson.JsonArray().apply { add(host) }) }
+            try { SourceWebRecipe.parse(SourceHostEffect("web.page", invalid), wildcardOwner); fail("Page grants and concrete cookie hosts must stay scoped") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.PLUGIN, error.code) }
+        }
+        val defaultHosts = narrowed.deepCopy().apply { remove("allowedHosts") }
+        val defaultRecipe = SourceWebRecipe.parse(SourceHostEffect("web.page", defaultHosts), wildcardOwner)
+        assertEquals("https://other.cdn.example.com/", defaultRecipe.checkedPageUrl("https://other.cdn.example.com/"))
     }
 
     @Test fun webRecipesOnlyMapDeclaredFeatureActionsAndFixedPromptVerbs() {

@@ -140,7 +140,9 @@ internal class SourceWebTransport(
 
     suspend fun installCookies() {
         for ((host, header) in page.owner.cookieHeaders) {
-            if (host !in page.recipe.domains || header.length > 16_384 || header.any { it == '\r' || it == '\n' || it == '\u0000' }) denied()
+            ScriptNetworkPolicy.validateDomain(host)
+            if (!ScriptNetworkPolicy.isHostAllowed(host, page.recipe.domains) ||
+                header.length > 16_384 || header.any { it == '\r' || it == '\n' || it == '\u0000' }) denied()
             page.scope.ensureCurrent()
             for (part in header.split(';')) {
                 val name = part.substringBefore('=').trim()

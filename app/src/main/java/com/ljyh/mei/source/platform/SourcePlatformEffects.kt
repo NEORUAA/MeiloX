@@ -72,7 +72,9 @@ class SourcePlatformEffects @Inject constructor(
                 val headers = effect.parameters.get("cookieHeaders")?.let { value ->
                     if (!value.isJsonObject || value.asJsonObject.size() > 20) platformDenied()
                     value.asJsonObject.entrySet().associate { (host, cookie) ->
-                        if (host !in source.manifest.permissions.network || !cookie.isJsonPrimitive || !cookie.asJsonPrimitive.isString) platformDenied()
+                        if (runCatching { ScriptNetworkPolicy.validateDomain(host) }.isFailure ||
+                            !ScriptNetworkPolicy.isHostAllowed(host, source.manifest.permissions.network) ||
+                            !cookie.isJsonPrimitive || !cookie.asJsonPrimitive.isString) platformDenied()
                         host to cookie.asString
                     }
                 }.orEmpty()

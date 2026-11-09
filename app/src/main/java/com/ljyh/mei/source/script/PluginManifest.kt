@@ -149,7 +149,9 @@ data class PluginManifest(
                 require(manifest.permissions.nativeSdks.all { it in setOf("netease.transport", "netease.urs",
                     "netease.securityHeaders", "netease.ursPuzzle", "netease.ursCaptcha", "netease.history") })
                 require(manifest.permissions.effects.all { it in com.ljyh.mei.source.api.SourceHostEffect.supportedTypes && it != "source.continue" })
-                require(manifest.linkHosts.size <= 20 && manifest.linkHosts.all { it in manifest.permissions.network })
+                require(manifest.linkHosts.size <= 20 && manifest.linkHosts.all {
+                    ScriptNetworkPolicy.isHostAllowed(it, manifest.permissions.network)
+                })
                 manifest.linkHosts.forEach(ScriptNetworkPolicy::validateDomain)
                 require(manifest.linkHosts.isEmpty() || "links.resolve" in manifest.capabilities)
                 val types = ContentType.entries.map { it.wireName }.toSet()
@@ -157,7 +159,7 @@ data class PluginManifest(
                 require(manifest.collectionTypes.all { it in types && it != "track" })
                 if (manifest.capabilities.any { it.startsWith("collection.") }) require(manifest.collectionTypes.isNotEmpty())
                 require(manifest.permissions.network.size <= 32)
-                manifest.permissions.network.forEach(ScriptNetworkPolicy::validateDomain)
+                manifest.permissions.network.forEach(ScriptNetworkPolicy::validateGrant)
                 require(manifest.config.size <= 32 && manifest.config.map { it.key }.distinct().size == manifest.config.size)
                 manifest.config.forEach { require(KEY.matches(it.key) && it.label.isNotBlank() && it.label.length <= 100) }
                 return manifest
