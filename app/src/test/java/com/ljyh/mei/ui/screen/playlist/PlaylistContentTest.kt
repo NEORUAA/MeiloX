@@ -200,6 +200,64 @@ class PlaylistContentTest {
     }
 
     @Test
+    fun sourceSelectedDownloadsUseLoadedRowsWithoutFetchingTheRestOfThePlaylist() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider().apply { reportedTrackCount = 3000; invalidContinuation = true }
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val visible = model.state.value
+            val track = provider.tracks[2]
+            val snapshot = model.selectedDetailTracks(ref, setOf(TrackRefCodec.mediaId(track.ref)))
+            assertEquals(listOf(track), snapshot.tracks)
+            assertSame(visible, model.state.value)
+            assertEquals(listOf(0), provider.pageRequests.map { it.offset })
+            val missing = runCatching {
+                model.selectedDetailTracks(ref, setOf(TrackRefCodec.mediaId(provider.tracks.last().ref)))
+            }.exceptionOrNull()
+            assertEquals(SourceErrorCode.NOT_FOUND, (missing as? SourceException)?.code)
+            assertEquals(listOf(0), provider.pageRequests.map { it.offset })
+
+            provider.accountRevision.value = "account-B"
+            assertTrue(runCatching {
+                model.selectedDetailTracks(ref, setOf(TrackRefCodec.mediaId(track.ref)))
+            }.exceptionOrNull() is CancellationException)
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun sourceSelectedDownloadsReuseSelectAllMetadataAndPreservePlaylistPositions() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider().apply { tracks = tracks + tracks.first() }
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            val all = model.detailTracks(ref)
+            val requests = provider.pageRequests.toList()
+            val ids = setOf(TrackRefCodec.mediaId(provider.tracks[64].ref), TrackRefCodec.mediaId(provider.tracks.first().ref))
+            val selected = model.selectedDetailTracks(ref, ids)
+            assertEquals(listOf(provider.tracks.first(), provider.tracks[64], provider.tracks.first()), selected.tracks)
+            assertEquals(all.generation, selected.generation)
+            assertEquals(requests, provider.pageRequests)
+            assertSame(all, model.detailTracks(ref))
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
     fun sourceBulkTracksLoadEveryOpaqueIdAndReuseCacheWithoutChangingVisiblePages() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val provider = DetailProvider()
@@ -275,12 +333,18 @@ class PlaylistContentTest {
             val oldAccount = model.detailTracks(ref)
             provider.accountRevision.value = "account-B"
             assertTrue(runCatching { model.ensureDetailCurrent(oldAccount) }.exceptionOrNull() is CancellationException)
+            assertTrue(runCatching {
+                model.selectedDetailTracks(ref, setOf(TrackRefCodec.mediaId(provider.tracks.first().ref)))
+            }.exceptionOrNull() is CancellationException)
 
             runCurrent()
             val currentAccount = model.detailTracks(ref)
             assertEquals("account-B", currentAccount.accountRevision)
             registry.register(DetailProvider())
             assertTrue(runCatching { model.ensureDetailCurrent(currentAccount) }.exceptionOrNull() is CancellationException)
+            assertTrue(runCatching {
+                model.selectedDetailTracks(ref, setOf(TrackRefCodec.mediaId(provider.tracks.first().ref)))
+            }.exceptionOrNull() is CancellationException)
             assertTrue(provider.savedOrders.isEmpty())
         } finally {
             try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }

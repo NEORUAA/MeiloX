@@ -311,9 +311,8 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
             if (bulkJob?.isActive == true) return
             bulkJob = scope.launch {
                 try {
-                    val snapshot = prepared ?: viewModel.detailTracks(ref).let { all ->
-                        all.copy(tracks = all.tracks.filter { ids == null || TrackRefCodec.mediaId(it.ref) in ids })
-                    }
+                    val snapshot = prepared ?: if (ids == null) viewModel.detailTracks(ref)
+                        else viewModel.selectedDetailTracks(ref, ids)
                     viewModel.ensureDetailCurrent(snapshot)
                     if (snapshot.tracks.isEmpty()) return@launch
                     if (quality == null) pendingDownload = snapshot else download(snapshot, quality)

@@ -492,6 +492,29 @@ class SourceContentViewModel internal constructor(
             PlaylistEditAction.REORDER_TRACKS in editor?.playlistEditActions.orEmpty()
     }
 
+    /** Explicit selections already have metadata in the visible page or a completed Select All snapshot. */
+    internal suspend fun selectedDetailTracks(ref: ContentRef, ids: Set<String>): SourceDetailTracks = detailTracksMutex.withLock {
+        val displayed = state.value
+        val snapshot = detailTracksCache?.takeIf { it.ref == ref }?.also { ensureDetailCurrent(it) }
+            ?: detailSnapshot(ref, displayed).copy(tracks = displayed.items.filterIsInstance<SourceItem.TrackItem>().map { it.track })
+        val selected = snapshot.tracks.filter { TrackRefCodec.mediaId(it.ref) in ids }
+        if (ids.isEmpty() || selected.map { TrackRefCodec.mediaId(it.ref) }.toSet() != ids) {
+            throw SourceException(SourceErrorCode.NOT_FOUND)
+        }
+        ensureDetailCurrent(snapshot)
+        snapshot.copy(tracks = selected)
+    }
+
+    private suspend fun detailSnapshot(ref: ContentRef, displayed: SourceContentState): SourceDetailTracks {
+        val owner = registry.requireProvider(ref.providerId)
+        val token = generation
+        val revision = router.contentRevision.value
+        val account = if (owner !is AccountRevisionCapability && SourceCapability.ACCOUNT in owner.capabilities)
+            router.account(ref.providerId) else displayed.account
+        return SourceDetailTracks(ref, displayed.title, emptyList(), owner, displayed.providerVersion,
+            displayed.accountRevision, account, token, revision).also { ensureDetailCurrent(it) }
+    }
+
     /** Bulk actions share the playback paginator while keeping the visible list and its scroll position. */
     internal suspend fun detailTracks(ref: ContentRef, reload: Boolean = false): SourceDetailTracks = detailTracksMutex.withLock {
         if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
@@ -500,14 +523,7 @@ class SourceContentViewModel internal constructor(
         }
         val displayed = state.value
         val reloadDetail = reload || displayed.error != null
-        val owner = registry.requireProvider(ref.providerId)
-        val token = generation
-        val revision = router.contentRevision.value
-        val account = if (owner !is AccountRevisionCapability && SourceCapability.ACCOUNT in owner.capabilities)
-            router.account(ref.providerId) else displayed.account
-        val snapshot = SourceDetailTracks(ref, displayed.title, emptyList(), owner, displayed.providerVersion,
-            displayed.accountRevision, account, token, revision)
-        ensureDetailCurrent(snapshot)
+        val snapshot = detailSnapshot(ref, displayed)
         val detail = if (reloadDetail) when (ref) {
             is PlaylistRef -> SourceItem.PlaylistItem(router.playlist(ref))
             is AlbumRef -> SourceItem.AlbumItem(router.album(ref))
@@ -527,7 +543,7 @@ class SourceContentViewModel internal constructor(
                 hasMore = reloadDetail || displayed.hasMore,
                 nextCursor = if (reloadDetail) null else displayed.nextCursor,
                 nextOffset = if (reloadDetail) 0 else displayed.nextOffset,
-                knownTotalCount = total, account = account,
+                knownTotalCount = total, account = snapshot.account,
                 initialAccountRevision = displayed.accountRevision, mediaItemFactory = { null })
             try {
                 while (queue.hasNextPage()) {

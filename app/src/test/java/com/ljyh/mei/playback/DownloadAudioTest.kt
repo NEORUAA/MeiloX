@@ -32,6 +32,33 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadAudioTest {
     @Test
+    fun notificationOwnershipAggregatesActiveWorkersAndIgnoresRetiredProgress() {
+        val state = DownloadNotificationState()
+        val updates = mutableListOf<DownloadNotificationProgress?>()
+        state.start("first", 2, updates::add)
+        state.start("second", 3, updates::add)
+        state.progress("first", 1, updates::add)
+        assertEquals(DownloadNotificationProgress(1, 5), updates.last())
+        state.progress("first", 0, updates::add)
+        assertEquals(DownloadNotificationProgress(1, 5), updates.last())
+        state.finish("first", updates::add)
+        assertEquals(DownloadNotificationProgress(0, 3), updates.last())
+        val count = updates.size
+        state.progress("first", 2, updates::add)
+        state.finish("first", updates::add)
+        assertEquals(count, updates.size)
+        state.progress("second", 4, updates::add)
+        assertEquals(DownloadNotificationProgress(3, 3), updates.last())
+        state.finish("second", updates::add)
+        assertNull(updates.last())
+        state.start("replacement", 1, updates::add)
+        state.progress("second", 3, updates::add)
+        assertEquals(DownloadNotificationProgress(0, 1), updates.last())
+        state.finish("replacement", updates::add)
+        assertNull(updates.last())
+    }
+
+    @Test
     fun pausedRestoreAndBufferingDoNotCountForAutomaticDownloads() = runTest {
         val tracker = AutomaticCachePlaybackTracker(this)
         var count = 0

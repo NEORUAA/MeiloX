@@ -85,6 +85,7 @@ class DownloadWorker(
         const val CHANNEL_ID = "download_channel"
         const val NOTIFICATION_ID = 1001
         private const val CONCURRENCY = 3
+        private val notifications = DownloadNotificationState()
 
         @Volatile
         private var sharedClient: OkHttpClient? = null
@@ -164,44 +165,33 @@ class DownloadWorker(
                 return Result.retry()
             }
         }
-        showNotification("准备下载...", 0)
-
-        val semaphore = Semaphore(CONCURRENCY)
-        supervisorScope {
-            val jobs = songIds.map { songId ->
-                async(Dispatchers.IO) {
-                    if (isStopped) return@async
-
-                    semaphore.withPermit {
-                        if (isStopped) return@withPermit
-
-                        processSong(songId, db, tempDir, relativePath)
+        try {
+            notifications.start(id.toString(), totalCount, ::publishNotification)
+            val semaphore = Semaphore(CONCURRENCY)
+            supervisorScope {
+                val jobs = songIds.map { songId ->
+                    async(Dispatchers.IO) {
+                        if (isStopped) return@async
+                        semaphore.withPermit {
+                            if (isStopped) return@withPermit
+                            processSong(songId, db, tempDir, relativePath)
+                        }
+                        currentCoroutineContext().ensureActive()
+                        val owned = db.downloadDao().getBySongId(songId)
+                        if (owned?.requestId != id.toString() || owned.status == DownloadStatus.PAUSED) return@async
+                        notifications.progress(id.toString(), completedCount.get() + failedCount.get(), ::publishNotification)
                     }
-
-                    currentCoroutineContext().ensureActive()
-                    val owned = db.downloadDao().getBySongId(songId)
-                    if (owned?.requestId != id.toString() || owned.status == DownloadStatus.PAUSED) return@async
-                    val done = completedCount.get() + failedCount.get()
-                    showNotification("正在下载 ($done/$totalCount)", done * 100 / totalCount)
                 }
+                jobs.awaitAll()
             }
-
-            jobs.awaitAll()
+            if (isStopped) return Result.failure()
+            currentCoroutineContext().ensureActive()
+            return Result.success()
+        } finally {
+            // Cancellation and task replacement must release ownership too. Another active
+            // worker keeps the shared notification until its own work has finished.
+            notifications.finish(id.toString(), ::publishNotification)
         }
-
-        if (isStopped) {
-            showNotification("下载已取消", 0, ongoing = false)
-            return Result.failure()
-        }
-
-        currentCoroutineContext().ensureActive()
-        if (songIds.none { db.downloadDao().getBySongId(it)?.requestId == id.toString() }) return Result.success()
-        val done = completedCount.get()
-        val failed = failedCount.get()
-        val statusText = if (failed > 0) "完成 $done, 失败 $failed" else "全部下载完成"
-        showNotification(statusText, 100, ongoing = false)
-
-        return Result.success()
     }
 
     private suspend fun processSong(
@@ -415,8 +405,13 @@ class DownloadWorker(
         }
     }
 
-    private fun showNotification(title: String, progress: Int, ongoing: Boolean = progress < 100) {
+    private fun publishNotification(progress: DownloadNotificationProgress?) {
         try {
+            val manager = NotificationManagerCompat.from(applicationContext)
+            if (progress == null) {
+                manager.cancel(NOTIFICATION_ID)
+                return
+            }
             val intent = Intent(applicationContext, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
@@ -426,19 +421,50 @@ class DownloadWorker(
             )
 
             val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-                .setContentTitle(title)
+                .setContentTitle("正在下载 (${progress.done}/${progress.total})")
                 .setContentText("Mei 音乐下载")
                 .setSmallIcon(R.drawable.baseline_download_24)
-                .setOngoing(ongoing)
-                .setProgress(100, progress, !ongoing)
+                .setOngoing(true)
+                .setProgress(progress.total, progress.done, false)
                 .setContentIntent(pendingIntent)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
 
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+            manager.notify(NOTIFICATION_ID, notification)
         } catch (e: SecurityException) {
             Timber.w(e, "Notification permission not granted")
         }
+    }
+}
+
+internal data class DownloadNotificationProgress(val done: Int, val total: Int)
+
+/** Serializes state changes with publication so a late worker cannot revive a finished notification. */
+internal class DownloadNotificationState {
+    private val requests = mutableMapOf<String, DownloadNotificationProgress>()
+
+    @Synchronized
+    fun start(requestId: String, total: Int, publish: (DownloadNotificationProgress?) -> Unit) {
+        require(total > 0)
+        requests[requestId] = DownloadNotificationProgress(0, total)
+        publish(aggregate())
+    }
+
+    @Synchronized
+    fun progress(requestId: String, done: Int, publish: (DownloadNotificationProgress?) -> Unit) {
+        val current = requests[requestId] ?: return
+        requests[requestId] = current.copy(done = done.coerceIn(current.done, current.total))
+        publish(aggregate())
+    }
+
+    @Synchronized
+    fun finish(requestId: String, publish: (DownloadNotificationProgress?) -> Unit) {
+        if (requests.remove(requestId) == null) return
+        publish(aggregate())
+    }
+
+    private fun aggregate(): DownloadNotificationProgress? = requests.values.takeIf { it.isNotEmpty() }?.let { active ->
+        DownloadNotificationProgress(active.sumOf { it.done }, active.sumOf { it.total })
     }
 }
 
