@@ -7,9 +7,10 @@ import kotlinx.coroutines.CancellationException
 internal class SourceCatalogCache(private val nowMs: () -> Long = System::currentTimeMillis) {
     class Owner(val instance: String, val version: String, val account: String?)
     data class Snapshot(val playlist: SourcePlaylist, val ids: List<TrackRef>?, val metadataLimit: Int = 1)
+    data class AlbumSnapshot(val album: SourceAlbumInfo, val ids: List<TrackRef>?)
     data class PageKey(val operation: String, val identity: String, val page: PageRequest)
 
-    private enum class Kind { TRACK, SNAPSHOT, LIKED_PLAYLIST, PAGE }
+    private enum class Kind { TRACK, SNAPSHOT, ALBUM_SNAPSHOT, LIKED_PLAYLIST, PAGE }
     private data class Key(val owner: Owner, val kind: Kind, val identity: Any = Unit)
     private data class Entry(val value: Any, val weight: Long, val expiresAtMs: Long? = null)
     private val owners = mutableMapOf<String, Owner>()
@@ -67,6 +68,19 @@ internal class SourceCatalogCache(private val nowMs: () -> Long = System::curren
         put(Key(owner, Kind.SNAPSHOT, value.playlist.ref.playlistId), value, weight)
     }
 
+    @Synchronized fun albumSnapshot(owner: Owner, albumId: String, validate: () -> Unit = {}): AlbumSnapshot? {
+        ensureOwner(owner, validate)
+        return (get(Key(owner, Kind.ALBUM_SNAPSHOT, albumId)) as? AlbumSnapshot)?.let(::copyAlbumSnapshot)
+    }
+
+    @Synchronized fun putAlbumSnapshot(owner: Owner, snapshot: AlbumSnapshot, validate: () -> Unit = {}) {
+        ensureOwner(owner, validate)
+        val value = copyAlbumSnapshot(snapshot)
+        val weight = itemWeight(SourceItem.AlbumItem(value.album)) + (value.ids?.sumOf { refWeight(it) + 8 } ?: 0)
+        ensureOwner(owner, validate)
+        put(Key(owner, Kind.ALBUM_SNAPSHOT, value.album.ref.albumId), value, weight)
+    }
+
     @Synchronized fun likedPlaylist(owner: Owner, validate: () -> Unit = {}): String? {
         ensureOwner(owner, validate)
         return get(Key(owner, Kind.LIKED_PLAYLIST)) as? String
@@ -105,7 +119,7 @@ internal class SourceCatalogCache(private val nowMs: () -> Long = System::curren
 
     @Synchronized fun invalidateCatalog(owner: Owner, validate: () -> Unit = {}) {
         ensureOwner(owner, validate)
-        removeEntries { it.owner === owner && it.kind in setOf(Kind.SNAPSHOT, Kind.PAGE, Kind.LIKED_PLAYLIST) }
+        removeEntries { it.owner === owner && it.kind in setOf(Kind.SNAPSHOT, Kind.ALBUM_SNAPSHOT, Kind.PAGE, Kind.LIKED_PLAYLIST) }
     }
 
     private fun get(key: Key): Any? {
@@ -147,6 +161,8 @@ internal class SourceCatalogCache(private val nowMs: () -> Long = System::curren
     private fun copyTrack(track: Track) = track.copy(artists = track.artists.toList())
     private fun copyPlaylist(playlist: SourcePlaylist) = playlist.copy(editableActions = playlist.editableActions.toSet())
     private fun copySnapshot(snapshot: Snapshot) = snapshot.copy(playlist = copyPlaylist(snapshot.playlist), ids = snapshot.ids?.toList())
+    private fun copyAlbumSnapshot(snapshot: AlbumSnapshot) = snapshot.copy(
+        album = snapshot.album.copy(artists = snapshot.album.artists.toList()), ids = snapshot.ids?.toList())
     private fun copyPage(page: SourcePage<SourceItem>) = page.copy(items = page.items.map { item -> when (item) {
         is SourceItem.TrackItem -> SourceItem.TrackItem(copyTrack(item.track))
         is SourceItem.PlaylistItem -> SourceItem.PlaylistItem(copyPlaylist(item.playlist))

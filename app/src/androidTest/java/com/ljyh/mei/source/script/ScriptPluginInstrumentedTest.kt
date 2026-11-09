@@ -43,6 +43,101 @@ import org.junit.Test
 
 class ScriptPluginInstrumentedTest {
     @Test
+    fun catalogFirstPagesReuseCompleteIndexesWithoutWholeCollectionWarmup() = runBlocking {
+        assumeTrue(JavaScriptSandbox.isSupported())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "catalog-first-page-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val manifest = PluginManifest.parse("""{"id":"org.meilox.first-page-fixture","name":"Catalog fixture","author":"Tests",
+            "version":"1","apiVersion":2,"catalogBatchSize":1000,
+            "capabilities":["catalog.track","catalog.tracks","playlist.get","playlist.tracks","album.get","album.tracks","account.get","library.likedTracks"],
+            "permissions":{"network":["api.example.com"]}}""")
+        File(directory, "index.js").writeText("""var plugin={onResponse:function(op,r){return JSON.parse(r.body);}};
+            ['catalog.track','catalog.tracks','playlist.get','playlist.tracks','album.get','album.tracks','account.get','library.likedTracks'].forEach(function(op){
+                plugin[op]=function(p){return {request:{url:'https://api.example.com/'+op,method:'POST',body:JSON.stringify(p)}};};
+            });globalThis.sourcePlugin=plugin;""")
+        val provider = ScriptMusicProvider(manifest, directory, ScriptRuntime(context), true, emptyMap(), { true },
+            { emptyMap() }, { emptyMap() }, {}, { fail("A valid catalog operation must not disable its source") }, 0)
+        val calls = mutableListOf<Pair<String, JsonObject>>()
+        val gson = com.google.gson.Gson()
+        fun track(id: String) = mapOf("trackId" to id, "title" to "Track $id", "artists" to listOf("Fixture"), "durationMs" to 1000)
+        val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = field.get(policy) as okhttp3.OkHttpClient
+        try {
+            field.set(policy, original.newBuilder().addInterceptor { chain ->
+                val request = chain.request()
+                val operation = request.url.encodedPath.removePrefix("/")
+                val buffer = Buffer(); checkNotNull(request.body).writeTo(buffer)
+                val params = com.google.gson.JsonParser.parseString(buffer.readUtf8()).asJsonObject
+                calls += operation to params
+                val limit = params.get("metadataLimit")?.asInt ?: 30
+                val ids = (1..3000).map { "p$it" }
+                val albumIds = (1..90).map { "a$it" } + "a1"
+                val result: Any = when (operation) {
+                    "playlist.get", "library.likedTracks" -> mapOf("playlistId" to (params.get("playlistId")?.asString ?: "liked"),
+                        "title" to "Playlist", "trackCount" to ids.size, "trackIds" to ids, "tracks" to ids.take(limit).map(::track))
+                    "account.get" -> mapOf("accountId" to "fixture-account", "displayName" to "Fixture")
+                    "catalog.tracks" -> params.getAsJsonArray("trackIds").map { track(it.asString) }
+                    "album.get" -> when (params.get("albumId").asString) {
+                        "legacy" -> mapOf("albumId" to "legacy", "title" to "Legacy", "trackCount" to 1)
+                        "partial" -> mapOf("albumId" to "partial", "title" to "Invalid partial index", "trackCount" to 2, "trackIds" to listOf("a1"))
+                        else -> mapOf("albumId" to "album", "title" to "Album", "trackCount" to albumIds.size,
+                            "trackIds" to albumIds, "tracks" to albumIds.take(limit).map(::track))
+                    }
+                    "album.tracks" -> mapOf("items" to listOf(track("legacy-song")), "hasMore" to false)
+                    else -> error("Unexpected catalog operation: $operation")
+                }
+                Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                    .body(gson.toJson(result).toResponseBody()).build()
+            }.build())
+            withTimeout(30_000) {
+                val playlist = PlaylistRef(provider.id, "playlist")
+                provider.playlist(playlist)
+                assertEquals(listOf("playlist.get"), calls.map { it.first })
+                assertEquals(30, calls.single().second.get("metadataLimit").asInt)
+                val first = provider.playlistTracks(playlist, PageRequest(limit = 30))
+                assertEquals((1..30).map { "p$it" }, first.items.map { it.ref.trackId })
+                assertEquals(1, calls.size)
+                assertEquals(3000, checkNotNull(provider.completeTrackIds("playlist")).ids.size)
+                assertEquals(1, calls.size)
+                val next = provider.playlistTracks(playlist, PageRequest(offset = 30, limit = 30, cursor = first.nextCursor))
+                assertEquals((31..60).map { "p$it" }, next.items.map { it.ref.trackId })
+                assertEquals(30, calls.last().second.getAsJsonArray("trackIds").size())
+                assertEquals(1, calls.count { it.first == "catalog.tracks" })
+                provider.library(LibraryCollection.LIKED_TRACKS, PageRequest(limit = 30))
+                assertEquals(30, calls.last { it.first == "library.likedTracks" }.second.get("metadataLimit").asInt)
+                val album = AlbumRef(provider.id, "album")
+                provider.album(album)
+                assertEquals(30, calls.last().second.get("metadataLimit").asInt)
+                val before = calls.size
+                provider.albumTracks(album, PageRequest(limit = 30))
+                assertEquals(before, calls.size)
+                val page2 = provider.albumTracks(album, PageRequest(offset = 30, limit = 30, cursor = "30"))
+                assertEquals((31..60).map { "a$it" }, page2.items.map { it.ref.trackId })
+                assertEquals("catalog.tracks", calls.last().first)
+                val repeatPageCount = calls.size
+                provider.albumTracks(album, PageRequest(offset = 30, limit = 30, cursor = "30"))
+                assertEquals(repeatPageCount, calls.size)
+                assertEquals("a1", provider.albumTracks(album, PageRequest(offset = 90, limit = 30, cursor = "90")).items.single().ref.trackId)
+                provider.albumTracks(album, PageRequest(limit = 30, refresh = true))
+                provider.album(album)
+                assertEquals(2, calls.count { it.first == "album.get" })
+                assertEquals(0, calls.count { it.first == "album.tracks" })
+                val legacy = AlbumRef(provider.id, "legacy")
+                provider.album(legacy)
+                assertEquals("legacy-song", provider.albumTracks(legacy, PageRequest(limit = 30)).items.single().ref.trackId)
+                assertEquals(1, calls.count { it.first == "album.tracks" })
+                try { provider.album(AlbumRef(provider.id, "partial")); fail("Partial indexes must not truncate albums") }
+                catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+            }
+        } finally {
+            field.set(policy, original)
+            provider.enabled = false
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun explicitlyEnabledLargeArtworkDownloadsAndDecodesThroughTheHostImagePath() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("sourceArtworkLive") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -159,59 +159,79 @@ class SourceCompatibilityInstrumentedTest {
         }
     }
 
-    @Test fun installedNeteasePlaylistPrimesMetadataBeforeShuffle(): Unit = runBlocking {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("neteaseMetadataWarmupLive") == "true")
+    @Test fun installedNeteaseDetailFirstPagesReuseCatalogSnapshots(): Unit = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("neteaseDetailFirstPageLive") == "true")
+        val baseline = args.getString("neteaseDetailBaseline") == "true"
         val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
         withTimeout(20_000) { router.registry.awaitInitialized() }
         val provider = router.registry.requireProvider(ProviderIds.NETEASE) as ScriptMusicProvider
-        assertNotNull(withTimeout(20_000) { (provider as AccountCapability).account() })
         val configuration = provider.platformConfiguration().toMap()
-        val revision = provider.accountRevision.first()
-        val refs = listOf("461301454", "22808850", "3386983735", "1847812119", "1413795919", "830949", "29366904", "744722")
-            .map { TrackRef(ProviderIds.NETEASE, it) }
-        val networkField = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }
-        val policy = networkField.get(provider) as ScriptNetworkPolicy
-        val clientField = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
-        val original = clientField.get(policy) as OkHttpClient
-        val requests = AtomicInteger()
+        val revision = provider.accountRevision.value
+        val policy = ScriptMusicProvider::class.java.getDeclaredField("network").apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+        val field = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = field.get(policy) as OkHttpClient
+        val playlistRequests = AtomicInteger()
+        val albumRequests = AtomicInteger()
+        val metadataRows = java.util.concurrent.CopyOnWriteArrayList<Int>()
+        val windows = java.util.concurrent.CopyOnWriteArrayList<Int>()
         try {
-            clientField.set(policy, original.newBuilder().addInterceptor { chain ->
-                requests.incrementAndGet()
-                chain.proceed(chain.request())
+            field.set(policy, original.newBuilder().addInterceptor { chain ->
+                val request = chain.request()
+                val path = request.url.encodedPath
+                if (path.contains("playlist/detail")) {
+                    playlistRequests.incrementAndGet()
+                    runCatching {
+                        val buffer = okio.Buffer(); checkNotNull(request.body).writeTo(buffer)
+                        JsonParser.parseString(buffer.readUtf8()).asJsonObject.get("n")?.asInt
+                    }.getOrNull()?.let(metadataRows::add)
+                }
+                if (path.contains("/album/")) albumRequests.incrementAndGet()
+                if (path.endsWith("/song/detail")) runCatching {
+                    val buffer = okio.Buffer(); checkNotNull(request.body).writeTo(buffer)
+                    val body = JsonParser.parseString(buffer.readUtf8()).asJsonObject
+                    JsonParser.parseString(body.get("c").asString).asJsonArray.size()
+                }.getOrNull()?.let(windows::add)
+                chain.proceed(request)
             }.build())
-            val playlist = PlaylistRef(ProviderIds.NETEASE, "945595972")
-            withTimeout(60_000) {
-                router.playlist(playlist)
-                val page = router.playlistTracks(playlist, PageRequest(limit = 30))
-                assertEquals("Warmup must retain the original visible page", 30, page.items.size)
-                assertTrue("The metadata check must cover tracks beyond page one", refs.none { ref -> page.items.any { it.ref == ref } })
+            val playlist = PlaylistRef(ProviderIds.NETEASE, args.getString("neteaseDetailPlaylistId") ?: "945595972")
+            val album = AlbumRef(ProviderIds.NETEASE, args.getString("neteaseDetailAlbumId") ?: "32311")
+            val playlistStart = android.os.SystemClock.elapsedRealtime()
+            val first = withTimeout(60_000) { router.playlistTracks(playlist, PageRequest(limit = 30, refresh = true)) }
+            withTimeout(20_000) { router.playlist(playlist) }
+            val playlistMs = android.os.SystemClock.elapsedRealtime() - playlistStart
+            assertTrue(first.items.isNotEmpty())
+            val beforeIndex = playlistRequests.get()
+            val ids = checkNotNull((provider as CatalogIndexCapability).completeTrackIds(playlist.playlistId)).ids
+            assertTrue(ids.size > 30)
+            assertEquals(beforeIndex, playlistRequests.get())
+            val albumStart = android.os.SystemClock.elapsedRealtime()
+            withTimeout(20_000) { router.album(album) }
+            val firstAlbum = withTimeout(40_000) { router.albumTracks(album, PageRequest(limit = 30)) }
+            val albumMs = android.os.SystemClock.elapsedRealtime() - albumStart
+            assertTrue(firstAlbum.items.isNotEmpty())
+            val albumReads = albumRequests.get()
+            val beforeWarm = playlistRequests.get() + albumRequests.get() + windows.size
+            val warmStart = android.os.SystemClock.elapsedRealtime()
+            withTimeout(20_000) {
+                router.playlist(playlist); router.playlistTracks(playlist, PageRequest(limit = 30))
+                router.album(album); router.albumTracks(album, PageRequest(limit = 30))
             }
-            val before = requests.get()
-            val start = android.os.SystemClock.elapsedRealtime()
-            val tracks = withTimeout(10_000) { router.getTracks(refs) }
-            val elapsed = android.os.SystemClock.elapsedRealtime() - start
-            val lookupRequests = requests.get() - before
+            val warmMs = android.os.SystemClock.elapsedRealtime() - warmStart
+            val warmRequests = playlistRequests.get() + albumRequests.get() + windows.size - beforeWarm
             instrumentation.sendStatus(0, Bundle().apply { putString("stream",
-                "Warm playlist requested=${refs.size} returned=${tracks.size} lookupHttp=$lookupRequests elapsedMs=$elapsed\n") })
-            assertEquals("Opening the playlist must prime metadata beyond its visible page", refs.toSet(), tracks.map { it.ref }.toSet())
-            assertEquals("A warmed shuffle window must use host metadata without HTTP", 0, lookupRequests)
-            val beforeIndex = requests.get()
-            val complete = requireNotNull((provider as CatalogIndexCapability).completeTrackIds(playlist.playlistId)).ids
-            assertEquals("A warmed complete index must be host-owned and require no HTTP", beforeIndex, requests.get())
-            val beforeComplete = requests.get()
-            val completeStarted = android.os.SystemClock.elapsedRealtime()
-            val completeTracks = withTimeout(20_000) { router.getTracks(complete) }
-            val completeMs = android.os.SystemClock.elapsedRealtime() - completeStarted
-            val completeHttp = requests.get() - beforeComplete
-            instrumentation.sendStatus(0, Bundle().apply { putString("stream",
-                "Warm complete playlist requested=${complete.size} returned=${completeTracks.size} lookupHttp=$completeHttp elapsedMs=$completeMs\n") })
-            assertTrue("The live playlist must cover the complete collection", complete.size > 30)
-            assertEquals("Warm metadata must cover every playlist identity", complete.toSet(), completeTracks.map { it.ref }.toSet())
-            assertEquals("Complete warm metadata must not refetch song details", 0, completeHttp)
+                "Detail first pages baseline=$baseline playlistMs=$playlistMs playlistHttp=${playlistRequests.get()} metadataRows=$metadataRows detailBatches=$windows albumMs=$albumMs albumHttp=$albumReads warmMs=$warmMs warmHttp=$warmRequests completeIds=${ids.size}\n") })
+            if (!baseline) {
+                assertEquals(1, playlistRequests.get())
+                assertEquals("First-page metadata must be bounded to the visible page", listOf(30), metadataRows.toList())
+                assertTrue("First page must not hydrate unrelated song metadata", windows.all { it <= 30 })
+                assertEquals("Album detail and songs must share one endpoint read", 1, albumReads)
+                assertEquals("Reopening cached details must not fetch metadata", 0, warmRequests)
+            }
         } finally {
-            clientField.set(policy, original)
-            assertEquals("Warmup must preserve source configuration", configuration, provider.platformConfiguration())
-            assertEquals("Warmup must preserve the account revision", revision, provider.accountRevision.first())
+            field.set(policy, original)
+            assertTrue("Read-only detail requests must preserve source configuration", configuration == provider.platformConfiguration())
+            assertTrue("Read-only detail requests must preserve account revision", revision == provider.accountRevision.value)
         }
     }
 

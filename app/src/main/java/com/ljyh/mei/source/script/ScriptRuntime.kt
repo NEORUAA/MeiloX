@@ -226,7 +226,7 @@ class ScriptRuntime @Inject constructor(@ApplicationContext private val context:
 }
 
 internal fun scriptResultLimit(manifest: PluginManifest, operation: String, parameters: JsonObject): Int {
-    val bulk = operation in manifest.capabilities && (operation == "playlist.get" || operation == "catalog.tracks" ||
+    val bulk = operation in manifest.capabilities && (operation == "playlist.get" || operation == "album.get" || operation == "catalog.tracks" ||
         operation == "library.likedTracks" && parameters.get("metadataOnly")?.let {
             it.isJsonPrimitive && it.asJsonPrimitive.isBoolean && it.asBoolean
         } == true)

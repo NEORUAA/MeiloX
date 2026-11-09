@@ -27,16 +27,19 @@ import com.ljyh.mei.source.core.SourceRouter
 import com.ljyh.mei.ui.screen.source.SourceContentRequest
 import com.ljyh.mei.ui.screen.source.SourceContentViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.resetMain
@@ -197,6 +200,115 @@ class PlaylistContentTest {
         assertEquals("42", payload["pid"].asString)
         assertEquals("update", payload["op"].asString)
         assertEquals("[\"3\",\"1\",\"2\"]", payload["trackIds"].asString)
+    }
+
+    @Test
+    fun sourceCollectionHeadersAppearBeforeTracksAndRemainAfterTrackFailure() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            for (album in listOf(false, true)) {
+                val gate = CompletableDeferred<Unit>()
+                val provider = DetailProvider().apply { beforeTracks = { gate.await() } }
+                val registry = ProviderRegistry(listOf(provider))
+                val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+                val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+                val ref = if (album) AlbumRef(provider.id, "album") else PlaylistRef(provider.id, "playlist")
+                try {
+                    model.open(SourceContentRequest.Detail(ref))
+                    runCurrent()
+                    assertEquals(ref, model.state.value.detail?.ref)
+                    assertEquals(if (album) "Album" else "Playlist", model.state.value.title)
+                    assertTrue(model.state.value.loading)
+                    assertTrue(model.state.value.items.isEmpty())
+                    assertNull(model.state.value.error)
+
+                    gate.completeExceptionally(SourceException(SourceErrorCode.NETWORK))
+                    runCurrent()
+                    assertFalse(model.state.value.loading)
+                    assertEquals(SourceErrorCode.NETWORK, model.state.value.error)
+                    assertEquals(ref, model.state.value.detail?.ref)
+                    assertEquals(if (album) "Album" else "Playlist", model.state.value.title)
+                } finally { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun sourceCollectionRefreshKeepsRowsAndReadsFreshTracksBeforeMetadata() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            for (album in listOf(false, true)) {
+                val provider = DetailProvider()
+                val registry = ProviderRegistry(listOf(provider))
+                val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+                val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+                val ref = if (album) AlbumRef(provider.id, "album") else PlaylistRef(provider.id, "playlist")
+                val kind = if (album) "album" else "playlist"
+                try {
+                    model.open(SourceContentRequest.Detail(ref))
+                    runCurrent()
+                    val before = model.state.value
+                    assertEquals(30, before.items.size)
+                    val gate = CompletableDeferred<Unit>()
+                    provider.calls.clear()
+                    provider.beforeTracks = { if (it.refresh) gate.await() }
+                    provider.titleSuffix = " refreshed"
+                    provider.tracks = provider.tracks.drop(1)
+                    model.refresh()
+                    runCurrent()
+                    assertTrue(model.state.value.loading)
+                    assertTrue(model.state.value.refreshing)
+                    assertEquals(before.title, model.state.value.title)
+                    assertEquals(before.items, model.state.value.items)
+                    assertEquals(listOf("$kind.tracks:refresh"), provider.calls)
+
+                    gate.complete(Unit)
+                    runCurrent()
+                    assertEquals(listOf("$kind.tracks:refresh", "$kind.get"), provider.calls)
+                    assertFalse(model.state.value.loading)
+                    assertFalse(model.state.value.refreshing)
+                    assertEquals(before.title + " refreshed", model.state.value.title)
+                    assertEquals(provider.tracks.take(30).map { it.ref }, model.state.value.items.map { it.ref })
+                } finally { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun sourceCollectionHeadersRejectMetadataReturnedAfterAccountOrProviderChanges() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            for (album in listOf(false, true)) for (replaceProvider in listOf(false, true)) {
+                val provider = DetailProvider().apply { titleSuffix = " old" }
+                val registry = ProviderRegistry(listOf(provider))
+                val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+                val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+                val ref = if (album) AlbumRef(provider.id, "album") else PlaylistRef(provider.id, "playlist")
+                val titles = mutableListOf<String>()
+                val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    model.state.collect { titles += it.title }
+                }
+                provider.beforeDetails = {
+                    provider.beforeDetails = {}
+                    if (replaceProvider) registry.register(DetailProvider().apply { titleSuffix = " new" })
+                    else {
+                        provider.titleSuffix = " new"
+                        provider.accountRevision.value = "account-B"
+                    }
+                }
+                try {
+                    model.open(SourceContentRequest.Detail(ref))
+                    runCurrent()
+                    assertFalse(titles.any { it.endsWith(" old") })
+                    assertEquals((if (album) "Album" else "Playlist") + " new", model.state.value.title)
+                    assertFalse(model.state.value.loading)
+                    assertEquals(30, model.state.value.items.size)
+                } finally {
+                    collector.cancelAndJoin()
+                    model.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+                }
+            }
+        } finally { Dispatchers.resetMain() }
     }
 
     @Test
@@ -497,21 +609,41 @@ class PlaylistContentTest {
         var tracks = (1..65).map { Track(TrackRef(id, "track/$it:opaque"), "Track $it", emptyList()) }
         var reportedTrackCount: Int? = null
         var invalidContinuation = false
+        var titleSuffix = ""
+        var beforeDetails: suspend (ContentRef) -> Unit = {}
+        var beforeTracks: suspend (PageRequest) -> Unit = {}
+        val calls = mutableListOf<String>()
         val pageRequests = mutableListOf<PageRequest>()
         val savedOrders = mutableListOf<List<TrackRef>>()
 
-        override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(
-            ref, "Playlist", trackCount = reportedTrackCount ?: tracks.size, editableActions = playlistEditActions,
-        )
-        override suspend fun album(ref: AlbumRef) = SourceAlbumInfo(ref, "Album", trackCount = tracks.size)
-        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest) = trackPage(page)
-        override suspend fun albumTracks(ref: AlbumRef, page: PageRequest) = trackPage(page)
+        override suspend fun playlist(ref: PlaylistRef): SourcePlaylist {
+            calls += "playlist.get"
+            val value = SourcePlaylist(ref, "Playlist$titleSuffix", trackCount = reportedTrackCount ?: tracks.size,
+                editableActions = playlistEditActions)
+            beforeDetails(ref)
+            return value
+        }
+        override suspend fun album(ref: AlbumRef): SourceAlbumInfo {
+            calls += "album.get"
+            val value = SourceAlbumInfo(ref, "Album$titleSuffix", trackCount = tracks.size)
+            beforeDetails(ref)
+            return value
+        }
+        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
+            calls += "playlist.tracks" + if (page.refresh) ":refresh" else ""
+            return trackPage(page)
+        }
+        override suspend fun albumTracks(ref: AlbumRef, page: PageRequest): SourcePage<Track> {
+            calls += "album.tracks" + if (page.refresh) ":refresh" else ""
+            return trackPage(page)
+        }
         override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) {
             savedOrders += tracks.toList()
         }
 
-        private fun trackPage(request: PageRequest): SourcePage<Track> {
+        private suspend fun trackPage(request: PageRequest): SourcePage<Track> {
             pageRequests += request
+            beforeTracks(request)
             if (invalidContinuation && request.offset > 0) return SourcePage(emptyList(), hasMore = true)
             val rows = tracks.drop(request.offset).take(request.limit)
             return SourcePage(rows, hasMore = request.offset + rows.size < tracks.size)

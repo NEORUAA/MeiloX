@@ -276,9 +276,23 @@ internal class ScriptMusicProvider(
 
     override suspend fun album(ref: AlbumRef): SourceAlbumInfo = validated {
         requireRef(ref)
-        parseAlbum(invoke("album.get", refParams("albumId", ref)).asJsonObject).also { if (it.ref != ref) invalid() }
+        catalogRead { read ->
+            (catalog.albumSnapshot(read.owner, ref.albumId) { ensureCatalog(read) } ?: loadAlbum(ref, read)).album
+        }
     }
-    override suspend fun albumTracks(ref: AlbumRef, page: PageRequest): SourcePage<Track> = trackPage("album.tracks", "albumId", ref, page)
+    override suspend fun albumTracks(ref: AlbumRef, page: PageRequest): SourcePage<Track> = validated {
+        requireRef(ref)
+        catalogRead { read ->
+            if (page.refresh) invalidateCatalog(read)
+            val snapshot = catalog.albumSnapshot(read.owner, ref.albumId) { ensureCatalog(read) }
+                ?: if (page.refresh && "album.get" in manifest.capabilities) loadAlbum(ref, read, page.limit) else null
+            snapshot?.ids?.let { indexedPage(it, page, read) } ?: cachedPage("album.tracks", ref.albumId, page, read) {
+                parsePage(invoke("album.tracks", refParams("albumId", ref, page)).asJsonObject, page) {
+                    SourceItem.TrackItem(parseCatalogTrack(it))
+                }
+            }.let { values -> SourcePage(values.items.map { (it as? SourceItem.TrackItem)?.track ?: invalid() }, values.hasMore, values.nextCursor) }
+        }
+    }
     override suspend fun artist(ref: ArtistRef): SourceArtistInfo = validated {
         requireRef(ref)
         parseArtist(invoke("artist.get", refParams("artistId", ref)).asJsonObject).also { if (it.ref != ref) invalid() }
@@ -292,8 +306,7 @@ internal class ScriptMusicProvider(
         requireRef(ref)
         catalogRead { read ->
             val cached = catalog.snapshot(read.owner, ref.playlistId) { ensureCatalog(read) }
-            val snapshot = cached?.takeIf { it.metadataLimit >= 5000 } ?: loadPlaylist(ref, read)
-            primeMetadata(snapshot, read)
+            val snapshot = cached ?: loadPlaylist(ref, read)
             snapshot.playlist
         }
     }
@@ -302,10 +315,8 @@ internal class ScriptMusicProvider(
         catalogRead { read ->
             if (page.refresh) invalidateCatalog(read)
             val cached = catalog.snapshot(read.owner, ref.playlistId) { ensureCatalog(read) }
-            val firstPage = page.offset == 0 && page.cursor == null
-            val snapshot = cached?.takeUnless { firstPage && it.metadataLimit < 5000 }
-                ?: if ("playlist.get" in manifest.capabilities) loadPlaylist(ref, read) else cached
-            if (firstPage && snapshot != null) primeMetadata(snapshot, read)
+            val snapshot = cached ?: if ("playlist.get" in manifest.capabilities)
+                loadPlaylist(ref, read, if (page.offset == 0 && page.cursor == null) page.limit.coerceIn(1, 5000) else 1) else null
             snapshot?.ids?.let { indexedPage(it, page, read) } ?: cachedPage("playlist.tracks", ref.playlistId, page, read) {
                 parsePage(invoke("playlist.tracks", refParams("playlistId", ref, page)).asJsonObject, page) {
                     SourceItem.TrackItem(parseCatalogTrack(it))
@@ -352,9 +363,8 @@ internal class ScriptMusicProvider(
             if (page.refresh) invalidateCatalog(read)
             ensureVerifiedAccount(read)
             if (collection == LibraryCollection.LIKED_TRACKS) {
-                val snapshot = likedSnapshot(read, page)
+                val snapshot = likedSnapshot(read, page, if (page.offset == 0 && page.cursor == null) page.limit.coerceIn(1, 5000) else 1)
                 if (snapshot?.ids != null) {
-                    if (page.offset == 0 && page.cursor == null) primeMetadata(snapshot, read)
                     val values = indexedPage(snapshot.ids, page, read)
                     if (values != null) return@catalogRead SourcePage(values.items.map { SourceItem.TrackItem(it) }, values.hasMore, values.nextCursor)
                 }
@@ -462,7 +472,25 @@ internal class ScriptMusicProvider(
         return lazyArtwork.track(value)
     }
 
-    private suspend fun loadPlaylist(ref: PlaylistRef, read: CatalogRead, metadataLimit: Int = 5000): SourceCatalogCache.Snapshot {
+    private suspend fun loadAlbum(ref: AlbumRef, read: CatalogRead, metadataLimit: Int = 30): SourceCatalogCache.AlbumSnapshot {
+        val params = refParams("albumId", ref)
+        val value = try {
+            metadataResult("album.get", params, metadataLimit.coerceIn(1, 5000)).asJsonObject
+        } catch (error: SourceResponseSizeException) {
+            // Optional indexes must not make an otherwise usable legacy album unavailable.
+            invoke("album.get", params.deepCopy().apply { addProperty("includeTracks", false) }).asJsonObject
+        }
+        val album = parseAlbum(value).also { if (it.ref != ref) invalid() }
+        val canHydrate = "catalog.track" in manifest.capabilities
+        val ids = if (canHydrate) catalogIds(value) else null
+        if (ids != null && album.trackCount > ids.size) invalid()
+        if (canHydrate) storeCatalogRows(value, ids, read)
+        val snapshot = SourceCatalogCache.AlbumSnapshot(album, ids)
+        catalog.putAlbumSnapshot(read.owner, snapshot) { ensureCatalog(read) }
+        return snapshot
+    }
+
+    private suspend fun loadPlaylist(ref: PlaylistRef, read: CatalogRead, metadataLimit: Int = 30): SourceCatalogCache.Snapshot {
         val value = metadataResult("playlist.get", refParams("playlistId", ref), metadataLimit).asJsonObject
         if (value.get("playlistId")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString != ref.playlistId) invalid()
         return storeSnapshot(value, read, metadataLimit)
@@ -477,13 +505,23 @@ internal class ScriptMusicProvider(
 
     private suspend fun storeSnapshot(value: JsonObject, read: CatalogRead, metadataLimit: Int): SourceCatalogCache.Snapshot {
         val playlist = parsePlaylist(value)
-        val ids = value.get("trackIds")?.takeUnless { it.isJsonNull }?.let { rows ->
+        val ids = catalogIds(value)
+        storeCatalogRows(value, ids, read)
+        val snapshot = SourceCatalogCache.Snapshot(playlist, ids, metadataLimit)
+        catalog.putSnapshot(read.owner, snapshot) { ensureCatalog(read) }
+        return snapshot
+    }
+
+    private fun catalogIds(value: JsonObject): List<TrackRef>? =
+        value.get("trackIds")?.takeUnless { it.isJsonNull }?.let { rows ->
             if (!rows.isJsonArray || rows.asJsonArray.size() > 100_000) invalid()
             rows.asJsonArray.map { row ->
                 if (!row.isJsonPrimitive || !row.asJsonPrimitive.isString) invalid()
                 TrackRef(id, row.asString).also(::requireRef)
             }
         }
+
+    private suspend fun storeCatalogRows(value: JsonObject, ids: List<TrackRef>?, read: CatalogRead) {
         val allowedIds = ids?.toHashSet()
         val rows = value.get("tracks")?.takeUnless { it.isJsonNull }
         if (rows != null && (!rows.isJsonArray || rows.asJsonArray.size() > 5000)) invalid()
@@ -499,10 +537,7 @@ internal class ScriptMusicProvider(
                 null
             }
         }.orEmpty()
-        val snapshot = SourceCatalogCache.Snapshot(playlist, ids, metadataLimit)
         catalog.putTracks(read.owner, tracks) { ensureCatalog(read) }
-        catalog.putSnapshot(read.owner, snapshot) { ensureCatalog(read) }
-        return snapshot
     }
 
     private suspend fun ensureVerifiedAccount(read: CatalogRead) {
@@ -512,10 +547,10 @@ internal class ScriptMusicProvider(
         if (account == null) throw SourceException(SourceErrorCode.AUTH_REQUIRED)
     }
 
-    private suspend fun likedSnapshot(read: CatalogRead, page: PageRequest = PageRequest(), metadataLimit: Int = 5000): SourceCatalogCache.Snapshot? {
+    private suspend fun likedSnapshot(read: CatalogRead, page: PageRequest = PageRequest(), metadataLimit: Int = 30): SourceCatalogCache.Snapshot? {
         ensureVerifiedAccount(read)
         catalog.likedPlaylist(read.owner) { ensureCatalog(read) }?.let { playlistId ->
-            catalog.snapshot(read.owner, playlistId) { ensureCatalog(read) }?.takeIf { it.metadataLimit >= metadataLimit }?.let { return it }
+            catalog.snapshot(read.owner, playlistId) { ensureCatalog(read) }?.let { return it }
         }
         val key = SourceCatalogCache.PageKey(LibraryCollection.LIKED_TRACKS.operation, "", page.copy(refresh = false))
         if (catalog.page(read.owner, key) { ensureCatalog(read) } != null) return null
@@ -528,18 +563,6 @@ internal class ScriptMusicProvider(
         return storeSnapshot(result, read, metadataLimit).also { snapshot ->
             catalog.putLikedPlaylist(read.owner, snapshot.playlist.ref.playlistId) { ensureCatalog(read) }
         }
-    }
-
-    private suspend fun primeMetadata(snapshot: SourceCatalogCache.Snapshot, read: CatalogRead) {
-        val ids = snapshot.ids?.takeIf { it.size <= 5000 && supportsBatchTrackRequests } ?: return
-        val cached = catalog.tracks(read.owner, ids) { ensureCatalog(read) }
-        val missing = ids.distinct().filterNot(cached::containsKey)
-        if (missing.isEmpty() || missing.size > manifest.catalogBatchSize) return
-        try { getTracks(missing) }
-        catch (error: SourceException) {
-            if (error.code !in setOf(SourceErrorCode.NETWORK, SourceErrorCode.TIMEOUT)) throw error
-        }
-        ensureCatalog(read)
     }
 
     private suspend fun indexedPage(ids: List<TrackRef>, page: PageRequest, read: CatalogRead): SourcePage<Track>? {

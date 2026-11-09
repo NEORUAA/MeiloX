@@ -255,6 +255,10 @@ class SourceContentViewModel internal constructor(
                     is PlaylistRef -> {
                         val refreshedTracks = if (page.refresh && !append) router.playlistTracks(ref, page) else null
                         val info = if (append) (previous.detail as? SourceItem.PlaylistItem)?.playlist ?: router.playlist(ref) else router.playlist(ref)
+                        currentCoroutineContext().ensureActive()
+                        if (token != generation || !sameOwner(boundProvider, previous)) return
+                        if (!append) mutableState.value = state.value.copy(title = info.title, artworkUrl = info.artworkUrl,
+                            description = info.description, detail = SourceItem.PlaylistItem(info))
                         val tracks = refreshedTracks ?: router.playlistTracks(ref, page)
                         received = tracks.items.size
                         incomingRefs = tracks.items.map { it.ref }
@@ -263,8 +267,13 @@ class SourceContentViewModel internal constructor(
                             hasMore = tracks.hasMore, nextCursor = tracks.nextCursor)
                     }
                     is AlbumRef -> {
+                        val refreshedTracks = if (page.refresh && !append) router.albumTracks(ref, page) else null
                         val info = if (append) (previous.detail as? SourceItem.AlbumItem)?.album ?: router.album(ref) else router.album(ref)
-                        val tracks = router.albumTracks(ref, page)
+                        currentCoroutineContext().ensureActive()
+                        if (token != generation || !sameOwner(boundProvider, previous)) return
+                        if (!append) mutableState.value = state.value.copy(title = info.title, artworkUrl = info.artworkUrl,
+                            description = info.description, detail = SourceItem.AlbumItem(info))
+                        val tracks = refreshedTracks ?: router.albumTracks(ref, page)
                         received = tracks.items.size
                         incomingRefs = tracks.items.map { it.ref }
                         previous.copy(title = info.title, artworkUrl = info.artworkUrl, description = info.description,

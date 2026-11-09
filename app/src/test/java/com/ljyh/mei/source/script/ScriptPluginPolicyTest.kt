@@ -46,6 +46,8 @@ class ScriptPluginPolicyTest {
         cache.putTracks(replacement, listOf(current))
         for (action in listOf<() -> Unit>(
             { cache.putTracks(first, listOf(track)) },
+            { cache.putAlbumSnapshot(first, SourceCatalogCache.AlbumSnapshot(
+                SourceAlbumInfo(AlbumRef("source", "album"), "Retired"), listOf(track.ref))) },
             { cache.rebind(first, "late-account") },
             { cache.ensureOwner(first) },
         )) {
@@ -125,6 +127,15 @@ class ScriptPluginPolicyTest {
         assertEquals(1534, cache.snapshot(owner, "playlist")?.ids?.size)
         assertEquals(5000, cache.snapshot(owner, "playlist")?.metadataLimit)
         cache.putLikedPlaylist(owner, "playlist")
+        val albumArtists = mutableListOf(SourceArtist("Album artist"))
+        val albumIds = mutableListOf(second.ref, track.ref, track.ref)
+        val album = SourceAlbumInfo(AlbumRef("source", "playlist"), "Album", artists = albumArtists, trackCount = 3)
+        cache.putAlbumSnapshot(owner, SourceCatalogCache.AlbumSnapshot(album, albumIds))
+        albumArtists.clear()
+        albumIds.clear()
+        assertEquals(listOf(second.ref, track.ref, track.ref), cache.albumSnapshot(owner, "playlist")?.ids)
+        assertEquals("Album artist", cache.albumSnapshot(owner, "playlist")?.album?.artists?.single()?.name)
+        assertEquals(1534, cache.snapshot(owner, "playlist")?.ids?.size)
         val key = SourceCatalogCache.PageKey("playlist.tracks", "playlist", PageRequest())
         val page = SourcePage<SourceItem>(listOf(SourceItem.TrackItem(second)), hasMore = true, nextCursor = "next-page")
         cache.putPage(owner, key, page)
@@ -144,6 +155,7 @@ class ScriptPluginPolicyTest {
         cache.putPage(owner, key, page)
         cache.invalidateCatalog(owner)
         assertNull(cache.snapshot(owner, "playlist"))
+        assertNull(cache.albumSnapshot(owner, "playlist"))
         assertNull(cache.likedPlaylist(owner))
         assertNull(cache.page(owner, key))
         assertEquals(true to account, cache.account(owner))
@@ -153,13 +165,33 @@ class ScriptPluginPolicyTest {
         assertTrue(cache.tracks(next, refs).isEmpty())
     }
 
+    @Test fun albumIndexesShareTheCatalogBudgetAndCannotDisplaceMetadataWithAnOversizedEntry() {
+        val cache = SourceCatalogCache()
+        val owner = cache.bind("source", "1", null)
+        val other = cache.bind("other", "1", null)
+        val track = Track(TrackRef("source", "track"), "Track", emptyList())
+        cache.putTracks(owner, listOf(track))
+        val album = SourceAlbumInfo(AlbumRef("source", "album"), "Album")
+        cache.putAlbumSnapshot(owner, SourceCatalogCache.AlbumSnapshot(album, listOf(track.ref, track.ref)))
+        assertNull(cache.albumSnapshot(other, "album"))
+        assertEquals(listOf(track.ref, track.ref), cache.albumSnapshot(owner, "album")?.ids)
+        cache.putAlbumSnapshot(owner, SourceCatalogCache.AlbumSnapshot(album.copy(ref = AlbumRef("source", "oversized")),
+            List(100_000) { track.ref }))
+        assertNull(cache.albumSnapshot(owner, "oversized"))
+        assertEquals(track, cache.tracks(owner, listOf(track.ref))[track.ref])
+        assertEquals(album, cache.albumSnapshot(owner, "album")?.album)
+        cache.release(owner)
+        try { cache.albumSnapshot(owner, "album"); fail("Released owners must not retain album indexes") }
+        catch (_: CancellationException) { }
+    }
+
     @Test fun largeCatalogResultsStayExplicitlyDeclaredAndCannotExpandProtocolState() {
         assertEquals(32L * 1024 * 1024, ScriptRuntime.MAX_HEAP_BYTES)
         assertEquals(256 * 1024, ScriptRuntime.MAX_RESULT_BYTES)
         assertEquals(2 * 1024 * 1024, ScriptRuntime.MAX_CATALOG_RESULT_BYTES)
         val manifest = PluginManifest("example.source", name = "Source", author = "Author", version = "1", apiVersion = 2,
-            capabilities = setOf("playlist.get", "catalog.tracks", "library.likedTracks", "catalog.track", "feature.invoke"))
-        for (operation in listOf("playlist.get", "catalog.tracks")) {
+            capabilities = setOf("playlist.get", "album.get", "catalog.tracks", "library.likedTracks", "catalog.track", "feature.invoke"))
+        for (operation in listOf("playlist.get", "album.get", "catalog.tracks")) {
             assertEquals(ScriptRuntime.MAX_CATALOG_RESULT_BYTES, scriptResultLimit(manifest, operation, json("{}")))
             assertEquals(ScriptRuntime.MAX_RESULT_BYTES, scriptResultLimit(manifest.copy(capabilities = emptySet()), operation, json("{}")))
         }

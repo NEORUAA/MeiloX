@@ -45,6 +45,8 @@ export interface Album {
   artists?: Array<string | { name: string; artistId?: string }>; trackCount?: number;
   description?: string; publishedAtMs?: number;
 }
+/** Optional complete album index and requested metadata; retained only in the host cache. */
+export interface AlbumSnapshot extends Album { trackIds?: string[]; tracks?: Track[] }
 export interface Artist {
   artistId: string; name: string; artworkUrl?: string; description?: string; alternateNames?: string[];
   trackCount?: number; albumCount?: number; musicVideoCount?: number; identities?: string[];
@@ -332,7 +334,7 @@ export interface Plugin {
   'lyrics.get'?(params: { trackId: string }, context: Context): Result<{ text: string; translation?: string } | null>;
   'feed.home'?(params: PageRequest & { categoryId?: string }, context: Context): Result<FeedPage>;
   'feed.discover'?(params: PageRequest & { categoryId?: string }, context: Context): Result<FeedPage>;
-  'album.get'?(params: { albumId: string }, context: Context): Result<Album>;
+  'album.get'?(params: { albumId: string; metadataLimit?: number; includeTracks?: boolean }, context: Context): Result<AlbumSnapshot>;
   'album.tracks'?(params: PageRequest & { albumId: string }, context: Context): Result<Page<Track>>;
   'artist.get'?(params: { artistId: string }, context: Context): Result<Artist>;
   'artist.tracks'?(params: PageRequest & { artistId: string }, context: Context): Result<Page<Track>>;

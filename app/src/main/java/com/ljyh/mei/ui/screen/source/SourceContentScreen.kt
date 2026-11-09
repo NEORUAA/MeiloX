@@ -465,6 +465,9 @@ internal fun sourceDetailMatches(tracks: List<Track>, query: String): List<Index
 }
 
 private fun LazyListScope.sourceDetailPagingStatus(state: SourceContentState, onRetry: () -> Unit, onMore: () -> Unit, automatic: Boolean = true) {
+    val detailRef = state.detail?.ref
+    if (state.loading && state.items.isEmpty() && !state.hasMore && state.error == null &&
+        (detailRef is PlaylistRef || detailRef is AlbumRef)) item("source-detail-first-page-loading") { LoadingView() }
     if (state.error != null) item("source-detail-retry") {
         GlasmioListRow(sourceErrorMessage(state.error), trailing = { Text("重试") }, onClick = onRetry)
     }
