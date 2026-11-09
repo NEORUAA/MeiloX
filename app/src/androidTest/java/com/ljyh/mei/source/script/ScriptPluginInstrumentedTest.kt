@@ -633,7 +633,7 @@ class ScriptPluginInstrumentedTest {
         }
         fun entry(version: String, bytes: ByteArray) = com.ljyh.mei.source.update.SourceMarketEntry(id, providerId, "Update fixture", version,
             repository, "https://raw.githubusercontent.com/Tests/Source/${"a".repeat(40)}/fixture.meisource",
-            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }, 2)
+            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }, 2, "fixture.meisource")
         val first = archive("1.0.0")
         val second = archive("1.1.0")
         val expanded = archive("1.2.0", extraNetwork = true)
@@ -644,9 +644,12 @@ class ScriptPluginInstrumentedTest {
         val transport = object : com.ljyh.mei.source.update.SourceUpdateTransport {
             override suspend fun index(etag: String?): com.ljyh.mei.source.update.SourceIndexResponse {
                 if (offline) throw IOException("private-market-fixture-secret")
-                val json = com.google.gson.Gson().toJson(mapOf("schemaVersion" to 1, "sources" to listOf(marketEntry)))
+                val json = com.google.gson.Gson().toJson(mapOf("schemaVersion" to 2, "sources" to listOf(mapOf(
+                    "packageId" to id, "providerId" to providerId, "name" to "Update fixture",
+                    "repository" to repository, "packagePath" to "fixture.meisource", "apiVersion" to 2))))
                 return com.ljyh.mei.source.update.SourceIndexResponse(json, "fixture-etag")
             }
+            override suspend fun resolve(listing: com.ljyh.mei.source.update.SourceMarketListing): com.ljyh.mei.source.update.SourceMarketEntry = marketEntry
             override suspend fun download(entry: com.ljyh.mei.source.update.SourceMarketEntry, destination: File) {
                 downloads++
                 destination.writeBytes(marketBytes)
@@ -667,10 +670,11 @@ class ScriptPluginInstrumentedTest {
                 val entries = com.ljyh.mei.source.update.SourceMarketIndex.parse(checkNotNull(live.index(null).json))
                     .filter { it.providerId in setOf("netease", "qqmusic") }
                 assertEquals("The published market must include both maintained sources", 2, entries.size)
-                for (entry in entries) {
+                for (listing in entries) {
                     val download = File.createTempFile("market-live-", ".meisource", context.cacheDir)
                     var checked: PreparedPlugin? = null
                     try {
+                        val entry = live.resolve(listing)
                         live.download(entry, download)
                         checked = manager.inspect(Uri.fromFile(download))
                         assertTrue(entry.matches(checked.manifest))

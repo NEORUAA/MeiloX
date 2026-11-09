@@ -8,6 +8,15 @@ import com.ljyh.mei.source.script.PluginManifest
 import java.io.StringReader
 import java.net.URI
 
+data class SourceMarketListing(
+    val packageId: String,
+    val providerId: String,
+    val name: String,
+    val repository: String,
+    val packagePath: String,
+    val apiVersion: Int,
+)
+
 data class SourceMarketEntry(
     val packageId: String,
     val providerId: String,
@@ -17,10 +26,15 @@ data class SourceMarketEntry(
     val packageUrl: String,
     val sha256: String,
     val apiVersion: Int,
+    val packagePath: String = inferPackagePath(packageUrl),
 ) {
     internal fun matches(manifest: PluginManifest): Boolean = manifest.id == packageId &&
         manifest.providerId == providerId && manifest.version == version && manifest.apiVersion == apiVersion
 }
+
+private fun inferPackagePath(url: String): String = runCatching {
+    URI(url).rawPath.removePrefix("/").split('/').drop(3).joinToString("/")
+}.getOrDefault("")
 
 data class SourceMarketItem(
     val entry: SourceMarketEntry,
@@ -44,21 +58,21 @@ enum class SourceUpdateReviewReason {
     LINKS, SESSION, CAPABILITIES, REQUIRED_CONFIGURATION,
 }
 
-/** A strict registry is data only; none of its values can select executable host code. */
 internal object SourceMarketIndex {
     const val URL = "https://raw.githubusercontent.com/NEORUAA/MeiloX-Source-Registry/main/index.json"
     const val MAX_BYTES = 256 * 1024
-    private val fields = setOf("packageId", "providerId", "name", "version", "repository", "packageUrl", "sha256", "apiVersion")
+    private val fields = setOf("packageId", "providerId", "name", "repository", "packagePath", "apiVersion")
     private val id = Regex("[a-z][a-z0-9._-]{2,79}")
     private val repositoryPattern = Regex("https://github\\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([A-Za-z0-9._-]{1,100})")
+    private val packagePathPattern = Regex("[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.meisource")
 
-    fun parse(json: String): List<SourceMarketEntry> {
+    fun parse(json: String): List<SourceMarketListing> {
         try {
             require(json.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
             val reader = JsonReader(StringReader(json))
             val seen = mutableSetOf<String>()
             var schema: Int? = null
-            var entries: List<SourceMarketEntry>? = null
+            var entries: List<SourceMarketListing>? = null
             reader.beginObject()
             while (reader.hasNext()) {
                 val field = reader.nextName()
@@ -66,7 +80,7 @@ internal object SourceMarketIndex {
                 when (field) {
                     "schemaVersion" -> schema = integer(reader)
                     "sources" -> {
-                        val values = mutableListOf<SourceMarketEntry>()
+                        val values = mutableListOf<SourceMarketListing>()
                         reader.beginArray()
                         while (reader.hasNext()) {
                             require(values.size < 200)
@@ -86,8 +100,8 @@ internal object SourceMarketIndex {
                             reader.endObject()
                             require(entryFields == fields)
                             fun value(key: String) = valuesByName.getValue(key)
-                            values += SourceMarketEntry(value("packageId"), value("providerId"), value("name"), value("version"),
-                                value("repository"), value("packageUrl"), value("sha256"), requireNotNull(api)).also(::validate)
+                            values += SourceMarketListing(value("packageId"), value("providerId"), value("name"),
+                                value("repository"), value("packagePath"), requireNotNull(api)).also(::validate)
                         }
                         reader.endArray()
                         entries = values
@@ -96,10 +110,10 @@ internal object SourceMarketIndex {
                 }
             }
             reader.endObject()
-            require(reader.peek() == JsonToken.END_DOCUMENT && seen == setOf("schemaVersion", "sources") && schema == 1)
+            require(reader.peek() == JsonToken.END_DOCUMENT && seen == setOf("schemaVersion", "sources") && schema == 2)
             return requireNotNull(entries).also {
-                require(it.map(SourceMarketEntry::packageId).distinct().size == it.size)
-                require(it.map(SourceMarketEntry::providerId).distinct().size == it.size)
+                require(it.map(SourceMarketListing::packageId).distinct().size == it.size)
+                require(it.map(SourceMarketListing::providerId).distinct().size == it.size)
             }
         } catch (_: Exception) { throw SourceException(SourceErrorCode.INVALID_RESPONSE, "音源市场索引无效") }
     }
@@ -109,27 +123,38 @@ internal object SourceMarketIndex {
         return reader.nextString().also { require(Regex("[1-9][0-9]{0,5}").matches(it)) }.toInt()
     }
 
-    fun validate(entry: SourceMarketEntry) {
-        require(id.matches(entry.packageId) && id.matches(entry.providerId) && entry.providerId != "local")
-        require(entry.name.isNotBlank() && entry.name.length <= 100 && entry.name.none(Char::isISOControl))
-        require(entry.repository.length <= 250 && entry.packageUrl.length <= 1000)
-        require(SourceVersion.parse(entry.version) != null && entry.version.length <= 50)
-        require(entry.apiVersion in 1..2)
-        require(Regex("[a-f0-9]{64}").matches(entry.sha256) && entry.sha256.any { it != '0' })
-        val repo = requireNotNull(repositoryPattern.matchEntire(entry.repository))
-        val owner = repo.groupValues[1]
-        val name = repo.groupValues[2]
+    internal fun repositoryParts(repository: String): Pair<String, String> {
+        val match = requireNotNull(repositoryPattern.matchEntire(repository))
+        val name = match.groupValues[2]
         require(name !in setOf(".", "..") && !name.endsWith(".git"))
+        return match.groupValues[1] to name
+    }
+
+    fun validate(listing: SourceMarketListing) {
+        require(id.matches(listing.packageId) && id.matches(listing.providerId) && listing.providerId != "local")
+        require(listing.name.isNotBlank() && listing.name.length <= 100 && listing.name.none(Char::isISOControl))
+        require(listing.repository.length <= 250 && listing.packagePath.length <= 512)
+        require(listing.apiVersion in 1..2)
+        val (_, repositoryName) = repositoryParts(listing.repository)
+        require(repositoryName !in setOf(".", "..") && !repositoryName.endsWith(".git"))
+        require(packagePathPattern.matches(listing.packagePath))
+        require(listing.packagePath.split('/').none { it in setOf(".", "..") })
+    }
+
+    fun validate(entry: SourceMarketEntry) {
+        validate(SourceMarketListing(entry.packageId, entry.providerId, entry.name, entry.repository, entry.packagePath, entry.apiVersion))
+        require(SourceVersion.parse(entry.version) != null && entry.version.length <= 50)
+        require(Regex("[a-f0-9]{64}").matches(entry.sha256) && entry.sha256.any { it != '0' })
+        val (owner, name) = repositoryParts(entry.repository)
         val url = URI(entry.packageUrl)
         require(url.scheme == "https" && url.rawAuthority == "raw.githubusercontent.com" && url.rawQuery == null && url.rawFragment == null)
         val parts = url.rawPath.removePrefix("/").split('/')
-        require(parts.size >= 4 && parts[0] == owner && parts[1] == name && Regex("[a-f0-9]{40}").matches(parts[2]))
-        require(parts.drop(3).all { Regex("[A-Za-z0-9][A-Za-z0-9._-]*").matches(it) })
-        require(parts.last().endsWith(".meisource"))
+        require(parts.size >= 4 && parts[0] == owner && parts[1] == name &&
+            (Regex("[a-f0-9]{40}").matches(parts[2]) || parts[2] == "HEAD"))
+        require(parts.drop(3).joinToString("/") == entry.packagePath)
     }
 }
 
-/** SemVer precedence deliberately ignores build metadata. */
 internal data class SourceVersion(private val core: List<String>, private val pre: List<String>) : Comparable<SourceVersion> {
     override fun compareTo(other: SourceVersion): Int {
         core.zip(other.core).forEach { (a, b) -> compareNumeric(a, b).takeIf { it != 0 }?.let { return it } }

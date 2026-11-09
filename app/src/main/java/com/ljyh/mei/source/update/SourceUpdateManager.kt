@@ -243,7 +243,7 @@ class SourceUpdateManager internal constructor(
         val response = transport.index(etag)
         val json = response.json ?: cachedJson ?: invalid("音源市场缓存已失效")
         val parsed = SourceMarketIndex.parse(json)
-        entries = parsed
+        entries = parsed.map { transport.resolve(it) }
         cachedJson = json
         etag = response.etag
     }

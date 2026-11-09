@@ -18,32 +18,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SourceUpdatesTest {
+    private val listing = SourceMarketListing("org.meilox.fixture", "fixture.music", "Fixture",
+        "https://github.com/Owner/Fixture", "dist/fixture.meisource", 2)
     private val entry = SourceMarketEntry("org.meilox.fixture", "fixture.music", "Fixture", "1.2.3",
         "https://github.com/Owner/Fixture", "https://raw.githubusercontent.com/Owner/Fixture/${"a".repeat(40)}/dist/fixture.meisource", "b".repeat(64), 2)
 
-    private fun json(value: SourceMarketEntry = entry): String = """{"schemaVersion":1,"sources":[{
-        "packageId":"${value.packageId}","providerId":"${value.providerId}","name":"${value.name}","version":"${value.version}",
-        "repository":"${value.repository}","packageUrl":"${value.packageUrl}","sha256":"${value.sha256}","apiVersion":${value.apiVersion}}]}"""
+    private fun json(value: SourceMarketListing = listing): String = """{"schemaVersion":2,"sources":[{
+        "packageId":"${value.packageId}","providerId":"${value.providerId}","name":"${value.name}",
+        "repository":"${value.repository}","packagePath":"${value.packagePath}","apiVersion":${value.apiVersion}}]}"""
 
     @Test
-    fun registryAcceptsImmutableOwnedPackagesAndRejectsAmbiguousOrExecutableMetadata() {
-        assertEquals(listOf(entry), SourceMarketIndex.parse(json()))
-        assertTrue(SourceMarketIndex.parse("""{"schemaVersion":1,"sources":[]}""").isEmpty())
+    fun registryAcceptsDynamicOwnedPackagesAndRejectsAmbiguousOrExecutableMetadata() {
+        assertEquals(listOf(listing), SourceMarketIndex.parse(json()))
+        assertTrue(SourceMarketIndex.parse("""{"schemaVersion":2,"sources":[]}""").isEmpty())
+        SourceMarketIndex.validate(entry.copy(packageUrl = entry.packageUrl.replace("/" + "a".repeat(40) + "/", "/HEAD/")))
+        try { SourceMarketIndex.validate(entry.copy(packageUrl = entry.packageUrl.replace("/" + "a".repeat(40) + "/", "/main/"))); fail("Accepted arbitrary mutable branch") }
+        catch (_: IllegalArgumentException) { }
         val invalid = listOf(
-            json().replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"schemaVersion\":1"),
+            json().replace("\"schemaVersion\":2", "\"schemaVersion\":2,\"schemaVersion\":2"),
             json().replace("\"providerId\":", "\"unexpected\":\"value\",\"providerId\":"),
             json().replace("\"apiVersion\":2", "\"apiVersion\":\"2\""),
             json().replace("\"name\":\"Fixture\"", "\"name\":\"Fixture\",\"name\":\"Other\""),
             json().replace("}]}", "},${json().substringAfter("[").substringBeforeLast("]")}]}") ,
-            json(entry.copy(packageUrl = entry.packageUrl.replace("Owner/Fixture/", "Owner/Other/"))),
-            json(entry.copy(packageUrl = entry.packageUrl.replace("a".repeat(40), "main"))),
-            json(entry.copy(packageUrl = entry.packageUrl.replace("/dist/", "/../"))),
-            json(entry.copy(packageUrl = entry.packageUrl + "?token=secret")),
-            json(entry.copy(packageUrl = entry.packageUrl.replace("raw.githubusercontent.com", "raw.githubusercontent.com.evil.invalid"))),
-            json(entry.copy(repository = "https://github.com/Owner/Fixture.git")),
-            json(entry.copy(sha256 = "0".repeat(64))),
-            json(entry.copy(version = "1.2.3-01")),
-            json(entry.copy(apiVersion = 3)),
+            json(listing.copy(packagePath = "main")),
+            json(listing.copy(packagePath = "../fixture.meisource")),
+            json(listing.copy(packagePath = "dist/fixture.txt")),
+            json(listing.copy(repository = "https://github.com/Owner/Fixture.git")),
+            json(listing.copy(packagePath = "dist/../fixture.meisource")),
+            json(listing.copy(apiVersion = 3)),
+            json().replace("\"schemaVersion\":2", "\"schemaVersion\":1"),
             json() + " true",
             " ".repeat(SourceMarketIndex.MAX_BYTES) + json(),
         )
@@ -51,7 +54,7 @@ class SourceUpdatesTest {
             try { SourceMarketIndex.parse(value); fail("Accepted invalid registry case $index") }
             catch (_: SourceException) { }
         }
-        val other = json(entry.copy(packageId = "org.meilox.other")).substringAfter("[").substringBeforeLast("]")
+        val other = json(listing.copy(packageId = "org.meilox.other")).substringAfter("[").substringBeforeLast("]")
         try { SourceMarketIndex.parse(json().replace("}]}", "},$other]}")); fail("Duplicate provider identity") }
         catch (_: SourceException) { }
     }

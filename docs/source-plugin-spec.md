@@ -49,7 +49,7 @@ API 1 may declare only `catalog.search`, `catalog.track`, `playback.resolve` and
 
 ## Marketplace and updates
 
-The [source registry](https://github.com/NEORUAA/MeiloX-Source-Registry) publishes a bounded, declarative `index.json`. Entries bind package/provider identity, SemVer version, API version and SHA-256 to a `.meisource` URL pinned to a full Git commit in the declared repository. Submission and metadata validation are maintained in that repository; the host never executes index content.
+The [source registry](https://github.com/NEORUAA/MeiloX-Source-Registry) publishes a bounded, declarative `index.json`. Entries bind package/provider identity, a relative `.meisource` path, and API version to a declared GitHub repository. The host resolves the latest commit touching that package (falling back to the repository `HEAD` when the unauthenticated API is rate-limited), downloads the archive, and derives its SemVer version and SHA-256 from the actual package before review. Submission and metadata validation are maintained in that repository; the host never executes index content.
 
 Startup checks run after source initialization in the background. Automatic updates require a matching, payload-bound repository origin and no additional permissions, capabilities or required configuration. Session fingerprint contract changes also require review. A file-imported source can acquire origin only after its exact current payload matches the digest-verified same-version market package, or after an explicit reviewed market update. Reimporting a file clears market origin.
 
