@@ -159,7 +159,7 @@ class ScriptPluginPolicyTest {
         assertSame(policy.client.connectionPool, policy.audioClient.connectionPool)
         assertNotSame(policy.client.dispatcher, policy.audioClient.dispatcher)
         assertSame(policy.audioClient, policy.audioClient)
-        assertFalse(policy.audioClient.followRedirects)
+        assertTrue(policy.audioClient.followRedirects)
     }
 
     @Test fun typedCatalogCacheSeparatesOwnersAndRejectsRetiredWritesAndAccountRebinds() {
@@ -1168,8 +1168,8 @@ class ScriptPluginPolicyTest {
         rejects { policy.validateHeaders(mapOf("Host" to "localhost")) }
         rejects { policy.validateHeaders(mapOf("Authorization" to "Bearer abc\r\nInjected: yes")) }
         policy.validateHeaders(mapOf("Authorization" to "Bearer plugin-owned-secret"))
-        assertFalse(policy.client.followRedirects)
-        assertFalse(policy.client.followSslRedirects)
+        assertTrue(policy.client.followRedirects)
+        assertTrue(policy.client.followSslRedirects)
     }
 
     @Test
@@ -1201,8 +1201,8 @@ class ScriptPluginPolicyTest {
             ",\"permissions\":{\"network\":[\"*.music.126.net\"]},\"linkHosts\":[\"m803.music.126.net\"]}"
         assertEquals(setOf("m803.music.126.net"), PluginManifest.parse(linked).linkHosts)
         rejects { PluginManifest.parse(linked.replace("\"linkHosts\":[\"m803.music.126.net\"]", "\"linkHosts\":[\"*.music.126.net\"]")) }
-        assertFalse(policy.client.followRedirects)
-        assertFalse(policy.client.followSslRedirects)
+        assertTrue(policy.client.followRedirects)
+        assertTrue(policy.client.followSslRedirects)
     }
 
     @Test

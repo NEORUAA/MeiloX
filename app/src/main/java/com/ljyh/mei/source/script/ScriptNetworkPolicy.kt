@@ -60,7 +60,7 @@ class ScriptNetworkPolicy(
         })
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS).callTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+        .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(false)
         .proxy(java.net.Proxy.NO_PROXY)
         .dns(Dns { host ->
             validateHost(host)
