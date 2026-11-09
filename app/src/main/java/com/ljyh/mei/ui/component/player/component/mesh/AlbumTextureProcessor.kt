@@ -2,8 +2,12 @@ package com.ljyh.mei.ui.component.player.component.mesh
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.core.graphics.ColorUtils
 
 object AlbumTextureProcessor {
+    private const val MAX_RED_SATURATION = 0.6f
+    // Leave headroom for the shader's audio-reactive contrast and saturation.
+    private const val MAX_RED_LUMINANCE = 0.16
 
     fun process(bitmap: Bitmap): Bitmap {
         if (bitmap.isRecycled) {
@@ -17,40 +21,47 @@ object AlbumTextureProcessor {
         val pixels = IntArray(w * h)
         img.getPixels(pixels, 0, w, 0, 0, w, h)
 
-        // Combined color pipeline — single pass in float space, no intermediate clamping.
-        // This matches the original AMLL pipeline exactly.
+        val hsl = FloatArray(3)
+        // Only vivid reds and rose hues need correction. All other colors retain
+        // the original AMLL pipeline, including its final integer truncation.
         for (i in pixels.indices) {
-            var r = Color.red(pixels[i]).toFloat()
-            var g = Color.green(pixels[i]).toFloat()
-            var b = Color.blue(pixels[i]).toFloat()
-            val a = Color.alpha(pixels[i])
+            val source = pixels[i]
+            val original = processColor(source, saturation = 3f)
+            ColorUtils.colorToHSL(source, hsl)
+            val strength = redCorrectionStrength(hsl[0], hsl[1])
+            if (strength == 0f) {
+                pixels[i] = original
+                continue
+            }
 
-            // 1. contrast 0.4
-            r = (r - 128f) * 0.4f + 128f
-            g = (g - 128f) * 0.4f + 128f
-            b = (b - 128f) * 0.4f + 128f
-
-            // 2. saturation 3.0 (RGB weighted, exact original formula)
-            val gray = r * 0.3f + g * 0.59f + b * 0.11f
-            r = gray * -2.0f + r * 3.0f
-            g = gray * -2.0f + g * 3.0f
-            b = gray * -2.0f + b * 3.0f
-
-            // 3. contrast 1.7
-            r = (r - 128f) * 1.7f + 128f
-            g = (g - 128f) * 1.7f + 128f
-            b = (b - 128f) * 1.7f + 128f
-
-            // 4. brightness 0.75
-            r *= 0.75f
-            g *= 0.75f
-            b *= 0.75f
-
+            ColorUtils.colorToHSL(processColor(source, saturation = 1.25f), hsl)
+            hsl[1] = hsl[1].coerceAtMost(MAX_RED_SATURATION)
+            val softened = ColorUtils.HSLToColor(hsl)
+            // Leave brightness headroom for audio response without shifting RGB hue.
+            var lowerScale = 0f
+            var upperScale = 1f
+            var scale = 1f
+            if (ColorUtils.calculateLuminance(softened) > MAX_RED_LUMINANCE) {
+                repeat(10) {
+                    val candidateScale = (lowerScale + upperScale) * 0.5f
+                    val candidate = Color.rgb(
+                        (Color.red(softened) * candidateScale).toInt(),
+                        (Color.green(softened) * candidateScale).toInt(),
+                        (Color.blue(softened) * candidateScale).toInt(),
+                    )
+                    if (ColorUtils.calculateLuminance(candidate) <= MAX_RED_LUMINANCE) {
+                        lowerScale = candidateScale
+                    } else {
+                        upperScale = candidateScale
+                    }
+                }
+                scale = lowerScale
+            }
             pixels[i] = Color.argb(
-                a,
-                r.toInt().coerceIn(0, 255),
-                g.toInt().coerceIn(0, 255),
-                b.toInt().coerceIn(0, 255)
+                Color.alpha(source),
+                (Color.red(original) + (Color.red(softened) * scale - Color.red(original)) * strength).toInt(),
+                (Color.green(original) + (Color.green(softened) * scale - Color.green(original)) * strength).toInt(),
+                (Color.blue(original) + (Color.blue(softened) * scale - Color.blue(original)) * strength).toInt(),
             )
         }
 
@@ -64,6 +75,40 @@ object AlbumTextureProcessor {
         }
 
         return img
+    }
+
+    private fun redCorrectionStrength(hue: Float, saturation: Float): Float {
+        val hueWeight = when {
+            hue <= 10f || hue >= 320f -> 1f
+            hue < 25f -> smoothStep((25f - hue) / 15f)
+            hue > 300f -> smoothStep((hue - 300f) / 20f)
+            else -> 0f
+        }
+        return hueWeight * smoothStep((saturation - 0.35f) / 0.3f)
+    }
+
+    private fun smoothStep(value: Float): Float {
+        val t = value.coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    private fun processColor(color: Int, saturation: Float): Int {
+        var r = (Color.red(color) - 128f) * 0.4f + 128f
+        var g = (Color.green(color) - 128f) * 0.4f + 128f
+        var b = (Color.blue(color) - 128f) * 0.4f + 128f
+        val gray = r * 0.3f + g * 0.59f + b * 0.11f
+        r = gray * (1f - saturation) + r * saturation
+        g = gray * (1f - saturation) + g * saturation
+        b = gray * (1f - saturation) + b * saturation
+        r = ((r - 128f) * 1.7f + 128f) * 0.75f
+        g = ((g - 128f) * 1.7f + 128f) * 0.75f
+        b = ((b - 128f) * 1.7f + 128f) * 0.75f
+        return Color.argb(
+            Color.alpha(color),
+            r.toInt().coerceIn(0, 255),
+            g.toInt().coerceIn(0, 255),
+            b.toInt().coerceIn(0, 255),
+        )
     }
 
     private fun stackBlur(bitmap: Bitmap, radius: Int): Bitmap {

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ljyh.mei.playback.PlaybackSpectrum
 import kotlin.math.abs
@@ -32,6 +33,115 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MeshAudioResponseTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun onlyVividRedsAreSoftenedWhileOtherColorsKeepTheirOriginalPixels() {
+        fun processedPixels(color: Int): IntArray {
+            val source = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(color)
+            }
+            val processed = AlbumTextureProcessor.process(source)
+            return try {
+                assertFalse("Processing must preserve the source bitmap", source.isRecycled)
+                assertEquals("Processing must preserve the cover pixels", color, source.getPixel(0, 0))
+                IntArray(processed.width * processed.height).also {
+                    processed.getPixels(it, 0, processed.width, 0, 0, processed.width, processed.height)
+                }
+            } finally {
+                processed.recycle()
+                source.recycle()
+            }
+        }
+        fun originalPixel(color: Int): Int {
+            val channels = floatArrayOf(Color.red(color).toFloat(), Color.green(color).toFloat(), Color.blue(color).toFloat())
+            for (index in channels.indices) channels[index] = (channels[index] - 128f) * 0.4f + 128f
+            val gray = channels[0] * 0.3f + channels[1] * 0.59f + channels[2] * 0.11f
+            val output = channels.map { channel ->
+                val saturated = gray * -2f + channel * 3f
+                (((saturated - 128f) * 1.7f + 128f) * 0.75f).toInt().coerceIn(0, 255)
+            }
+            return Color.argb(Color.alpha(color), output[0], output[1], output[2])
+        }
+        val sourceHsl = FloatArray(3)
+        val processedHsl = FloatArray(3)
+        listOf(Color.RED, ColorUtils.HSLToColor(floatArrayOf(330f, 1f, 0.5f)),
+            ColorUtils.HSLToColor(floatArrayOf(340f, 1f, 0.5f))).forEach { color ->
+            ColorUtils.colorToHSL(color, sourceHsl)
+            processedPixels(color).forEach { pixel ->
+                val label = "Red cover ${Integer.toHexString(color)}"
+                assertEquals("$label must remain opaque", 255, Color.alpha(pixel))
+                assertTrue("$label must leave brightness headroom for audio response",
+                    ColorUtils.calculateLuminance(pixel) <= 0.161)
+                ColorUtils.colorToHSL(pixel, processedHsl)
+                assertTrue("$label must not become oversaturated", processedHsl[1] <= 0.61f)
+                val difference = abs(sourceHsl[0] - processedHsl[0])
+                assertTrue("$label must retain its hue", minOf(difference, 360f - difference) <= 2f)
+                assertTrue("$label must retain visible color", processedHsl[1] > 0.3f)
+            }
+        }
+        val unchanged = listOf(Color.MAGENTA, Color.rgb(255, 128, 0), Color.YELLOW,
+            Color.GREEN, Color.CYAN, Color.BLUE, Color.rgb(128, 0, 255),
+            Color.WHITE, Color.GRAY, Color.BLACK,
+            ColorUtils.HSLToColor(floatArrayOf(0f, 0.3f, 0.5f)),
+            ColorUtils.HSLToColor(floatArrayOf(340f, 0.2f, 0.3f)))
+        unchanged.forEach { color ->
+            val expected = originalPixel(color)
+            processedPixels(color).forEach { pixel ->
+                assertEquals("Non-vivid-red cover ${Integer.toHexString(color)} must retain the original pipeline",
+                    expected, pixel)
+            }
+        }
+        // Adjacent colors must cross the correction boundaries without a visible step.
+        listOf(299f..321f, 9f..26f).forEach { range ->
+            var previous: Int? = null
+            repeat(((range.endInclusive - range.start) * 2).toInt() + 1) { step ->
+                val hue = range.start + step * 0.5f
+                val pixel = processedPixels(ColorUtils.HSLToColor(floatArrayOf(hue, 1f, 0.5f)))[0]
+                previous?.let {
+                    assertTrue("Hue transition at $hue must be continuous", colorDistance(it, pixel) <= 16)
+                }
+                previous = pixel
+            }
+        }
+        var previous: Int? = null
+        repeat(65) { step ->
+            val saturation = 0.34f + step * 0.005f
+            val pixel = processedPixels(ColorUtils.HSLToColor(floatArrayOf(0f, saturation, 0.5f)))[0]
+            previous?.let {
+                assertTrue("Saturation transition at $saturation must be continuous", colorDistance(it, pixel) <= 10)
+            }
+            previous = pixel
+        }
+    }
+
+    @Test
+    fun maximumAudioResponseKeepsVividRedBackgroundsWithinTheColorBounds() {
+        val renderer = compose.runOnIdle { MeshGradientRenderer().apply { flowSpeed = 0f } }
+        val host = MeshRenderTestHost(compose, renderer)
+        host.show()
+        var frameNanos = StartNanos
+        listOf(Color.RED, ColorUtils.HSLToColor(floatArrayOf(330f, 1f, 0.5f)),
+            ColorUtils.HSLToColor(floatArrayOf(340f, 1f, 0.5f))).forEach { color ->
+            val album = meshTestAlbum(color)
+            val pixels = host.capture {
+                renderer.setAlbum(album)
+                renderer.audioStrength = 1f
+                renderer.spectrum = PlaybackSpectrum(1f, 1f, 1f, 1f)
+                repeat(20) {
+                    frameNanos += FrameNanos
+                    renderer.advanceFrame(frameNanos)
+                }
+            }
+            pixels.forEach { pixel ->
+                val label = "Peak response for ${Integer.toHexString(color)}"
+                assertEquals("$label must remain opaque", 255, Color.alpha(pixel))
+                assertTrue("$label must keep the background dark enough for white content",
+                    ColorUtils.calculateLuminance(pixel) <= 0.18)
+                assertTrue("$label must leave channel headroom for the foreground",
+                    maxOf(Color.red(pixel), Color.green(pixel), Color.blue(pixel)) <= 0.85f * 255f)
+            }
+        }
+    }
 
     @Test
     fun maximumResponseKeepsNeutralArtworkOpaqueAndMovesColoredArtwork() {
