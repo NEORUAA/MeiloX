@@ -46,6 +46,46 @@ class HomeRepositoryTest {
         } finally { Dispatchers.resetMain() }
     }
 
+    @Test fun homeStartupStaysLoadingUntilThePluginAndFirstResponseAreReady() = runTest(dispatcher) {
+        val provider = FeedProvider()
+        val preferences = SourcePreferences(MemoryPreferences())
+        preferences.update { it.copy(preferredBrowseProvider = provider.id) }
+        val registry = ProviderRegistry(emptyList(), startupPending = true)
+        val model = SourceContentViewModel(SourceRouter(registry), preferences, registry).also(models::add)
+        val response = CompletableDeferred<Unit>()
+        provider.pending = response
+        provider.emptyFeed = true
+        assertTrue("The first frame must show loading before preferences or a request arrive", model.state.value.loading)
+        model.open(SourceContentRequest.Feed(FeedKind.HOME))
+        runCurrent()
+        assertTrue(model.state.value.loading)
+        assertNull(model.state.value.error)
+        assertTrue(provider.requests.isEmpty())
+
+        registry.register(provider)
+        runCurrent()
+        assertTrue(model.state.value.loading)
+        assertTrue(provider.requests.isEmpty())
+        registry.completeInitialization()
+        runCurrent()
+        assertEquals(provider.id, model.state.value.providerId)
+        assertTrue(model.state.value.loading)
+        assertNull(model.state.value.error)
+        assertEquals(1, provider.requests.size)
+
+        response.complete(Unit)
+        advanceUntilIdle()
+        assertFalse("Only a completed empty response may show the empty state", model.state.value.loading)
+        assertTrue(model.state.value.sections.isEmpty())
+        assertNull(model.state.value.error)
+
+        provider.emptyFeed = false
+        model.refresh()
+        advanceUntilIdle()
+        assertFalse(model.state.value.loading)
+        assertEquals(2, model.state.value.sections.size)
+    }
+
     @Test fun profileEntryKeepsLoadingAndTemporaryFailuresOutOfTheLoginFlow() {
         val profile = SourceProfileState(providerId = "netease", featureRoutes = setOf("account/home", "account/login"),
             features = mapOf("login" to setOf("webLogin", "loginWithMobilePassword", "requestMobileSmsCode", "loginWithMobileSms")))
@@ -583,9 +623,11 @@ class HomeRepositoryTest {
         var repeatAppend = false
         var categories = emptyList<SourceCategory>()
         var pending: CompletableDeferred<Unit>? = null
+        var emptyFeed = false
         override suspend fun getFeed(kind: FeedKind, categoryId: String?, page: PageRequest): SourceFeedPage {
             requests += page
             pending?.await()
+            if (emptyFeed) return SourceFeedPage(emptyList())
             if (page.offset > 0 && failAppend) throw SourceException(SourceErrorCode.NETWORK)
             val contentOffset = if (repeatAppend) 0 else page.offset
             return SourceFeedPage(listOf(SourceFeedSection("page-$contentOffset", "Page", SourceFeedLayout.TRACKS,

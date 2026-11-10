@@ -100,7 +100,7 @@ class SourceContentViewModel internal constructor(
     private val request = MutableStateFlow<SourceContentRequest?>(null)
     private val refreshVersion = MutableStateFlow(0L)
     private var consumedRefreshVersion = 0L
-    private val mutableState = MutableStateFlow(SourceContentState())
+    private val mutableState = MutableStateFlow(SourceContentState(loading = true))
     val state = mutableState.asStateFlow()
     private val mutableBusy = MutableStateFlow(false)
     val busy = mutableBusy.asStateFlow()
@@ -132,6 +132,7 @@ class SourceContentViewModel internal constructor(
                 invalidatePage()
                 val requested = selection.request ?: return@collectLatest
                 val id = selection.providerId.takeIf(String::isNotBlank) ?: return@collectLatest
+                registry.awaitInitialized()
                 val provider = registry.provider(id)
                 val revisionFlow: Flow<String?> = (provider as? AccountRevisionCapability)?.accountRevision ?: flowOf(null)
                 var refreshPending = explicitRefresh
