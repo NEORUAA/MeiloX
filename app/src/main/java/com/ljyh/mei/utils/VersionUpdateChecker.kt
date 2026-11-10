@@ -32,13 +32,14 @@ sealed interface VersionUpdateResult {
     data object Failed : VersionUpdateResult
 }
 
-/** Checks GitHub tags or downloadable main-branch CI builds off the Compose thread. */
+/** Checks GitHub release assets off the Compose thread. */
 object VersionUpdateChecker {
     private const val Repository = "NEORUAA/MeiloX"
     private val AcceptedRepositories = setOf(Repository, "MeiloX/MeiloX")
     private const val RepositoryUrl = "https://github.com/$Repository"
     private const val ApiUrl = "https://api.github.com/repos/$Repository"
-    private const val TagsEndpoint = "$ApiUrl/tags?per_page=100"
+    private const val ReleasesEndpoint = "$ApiUrl/releases?per_page=100"
+    private const val BetaReleaseEndpoint = "$ApiUrl/releases/tags/prerelease"
     private const val WorkflowPath = ".github/workflows/main.yml"
     private const val RunsPerPage = 30
     private const val MaxRunPages = 2
@@ -88,18 +89,36 @@ object VersionUpdateChecker {
         fetchJson: suspend (String) -> JsonElement,
     ): VersionUpdateResult {
         val current = parseVersion(currentVersion) ?: return VersionUpdateResult.Failed
-        val tags = fetchJson(TagsEndpoint).asJsonArray.mapNotNull { element ->
-            val name = element.objectOrNull()?.string("name")?.trim() ?: return@mapNotNull null
-            parseVersion(name)?.let { version -> VersionTag(name, version) }
+        val releases = fetchJson(ReleasesEndpoint).asJsonArray
+        val latest = releases.mapNotNull { element ->
+            val release = element.objectOrNull() ?: return@mapNotNull null
+            if (release.boolean("draft") == true || release.boolean("prerelease") == true) {
+                return@mapNotNull null
+            }
+            val name = release.string("tag_name")?.trim() ?: return@mapNotNull null
+            val version = parseVersion(name) ?: return@mapNotNull null
+            val downloadUrl = release.apkDownloadUrl() ?: return@mapNotNull null
+            VersionTag(name, version, downloadUrl)
         }
-        val latest = tags.maxWithOrNull { left, right ->
+            .maxWithOrNull { left, right ->
             compareVersions(left.version, right.version)
-        } ?: return VersionUpdateResult.Failed
+        }
+        if (latest == null && releases.any { it.objectOrNull()?.string("name") != null }) {
+            val legacyLatest = releases.mapNotNull { element ->
+                val name = element.objectOrNull()?.string("name")?.trim() ?: return@mapNotNull null
+                parseVersion(name)?.let { version -> VersionTag(name, version, "$RepositoryUrl/releases/tag/${URLEncoder.encode(name, "UTF-8")}") }
+            }.maxWithOrNull { left, right -> compareVersions(left.version, right.version) }
+                ?: return VersionUpdateResult.Failed
+            return if (compareVersions(legacyLatest.version, current) > 0) {
+                VersionUpdateResult.UpdateAvailable(legacyLatest.name, legacyLatest.downloadUrl)
+            } else VersionUpdateResult.UpToDate
+        }
+        latest ?: return VersionUpdateResult.Failed
 
         return if (compareVersions(latest.version, current) > 0) {
             VersionUpdateResult.UpdateAvailable(
                 latestTag = latest.name,
-                releaseUrl = "$RepositoryUrl/releases/tag/${URLEncoder.encode(latest.name, "UTF-8")}",
+                releaseUrl = latest.downloadUrl,
             )
         } else {
             VersionUpdateResult.UpToDate
@@ -110,6 +129,25 @@ object VersionUpdateChecker {
         installedBuild: InstalledBuild,
         fetchJson: suspend (String) -> JsonElement,
     ): VersionUpdateResult {
+        try {
+            checkBetaRelease(installedBuild, fetchJson)?.let { return it }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep the Actions artifact path available while older releases roll over.
+        }
+
+        return checkBetaArtifacts(installedBuild, fetchJson)
+    }
+
+    private suspend fun checkBetaRelease(
+        installedBuild: InstalledBuild,
+        fetchJson: suspend (String) -> JsonElement,
+    ): VersionUpdateResult? {
+        val release = fetchJson(BetaReleaseEndpoint).objectOrNull() ?: return null
+        if (release.boolean("draft") == true || release.boolean("prerelease") != true) return null
+        val asset = release.apkAsset() ?: return null
+        val candidate = asset.toReleaseBuild(release.string("target_commitish")) ?: return null
         val currentCiBuild = installedBuild.run {
             if (!sourceDirty && ciRunNumber > 0 && ciRunAttempt > 0) {
                 CiBuild(ciRunNumber, ciRunAttempt)
@@ -117,45 +155,60 @@ object VersionUpdateChecker {
                 null
             }
         }
+        val comparison = if (currentCiBuild != null) {
+            candidate.build.compareTo(currentCiBuild).let {
+                if (it > 0) BuildComparison.UpdateAvailable else BuildComparison.CurrentOrNewer
+            }
+        } else {
+            candidate.headSha?.let { compareSource(installedBuild, it, fetchJson) }
+                ?: BuildComparison.Unknown
+        }
+        if (comparison == BuildComparison.CurrentOrNewer) {
+            return VersionUpdateResult.UpToDate
+        }
+        return VersionUpdateResult.UpdateAvailable(
+            latestTag = candidate.build.label,
+            releaseUrl = candidate.downloadUrl,
+            isBeta = true,
+            currentBuildLabel = currentCiBuild?.label ?: installedBuild.label,
+            comparisonKnown = comparison == BuildComparison.UpdateAvailable,
+        )
+    }
+
+    private suspend fun checkBetaArtifacts(
+        installedBuild: InstalledBuild,
+        fetchJson: suspend (String) -> JsonElement,
+    ): VersionUpdateResult {
+        val currentCiBuild = installedBuild.run {
+            if (!sourceDirty && ciRunNumber > 0 && ciRunAttempt > 0) CiBuild(ciRunNumber, ciRunAttempt) else null
+        }
         var artifactRequests = 0
         for (page in 1..MaxRunPages) {
             val response = fetchJson(
-                "$ApiUrl/actions/workflows/main.yml/runs" +
-                    "?branch=main&status=success&per_page=$RunsPerPage&page=$page",
+                "$ApiUrl/actions/workflows/main.yml/runs?branch=main&status=success&per_page=$RunsPerPage&page=$page",
             ).asJsonObject
             val rawRuns = response.array("workflow_runs") ?: return VersionUpdateResult.Failed
             val runs = rawRuns.mapNotNull { it.objectOrNull()?.toTrustedRun() }
                 .sortedByDescending { it.build }
             for (run in runs) {
-                if (currentCiBuild != null && run.build <= currentCiBuild) {
-                    return VersionUpdateResult.UpToDate
-                }
+                if (currentCiBuild != null && run.build <= currentCiBuild) return VersionUpdateResult.UpToDate
                 if (artifactRequests >= MaxArtifactRequests) return VersionUpdateResult.Failed
                 artifactRequests++
-                val artifacts = fetchJson(
-                    "$ApiUrl/actions/runs/${run.id}/artifacts?per_page=100",
-                ).asJsonObject.array("artifacts") ?: return VersionUpdateResult.Failed
-                val latestBuild = artifacts.mapNotNull {
-                    it.objectOrNull()?.downloadableBuildFor(run)
-                }.maxOrNull()
-                if (latestBuild != null) {
-                    val comparison = if (currentCiBuild != null) {
-                        if (latestBuild <= currentCiBuild) BuildComparison.CurrentOrNewer
-                        else BuildComparison.UpdateAvailable
-                    } else {
-                        compareSource(installedBuild, run.headSha, fetchJson)
-                    }
-                    if (comparison == BuildComparison.CurrentOrNewer) {
-                        return VersionUpdateResult.UpToDate
-                    }
-                    return VersionUpdateResult.UpdateAvailable(
-                        latestTag = latestBuild.label,
-                        releaseUrl = "$RepositoryUrl/actions/runs/${run.id}#artifacts",
-                        isBeta = true,
-                        currentBuildLabel = currentCiBuild?.label ?: installedBuild.label,
-                        comparisonKnown = comparison == BuildComparison.UpdateAvailable,
-                    )
-                }
+                val artifacts = fetchJson("$ApiUrl/actions/runs/${run.id}/artifacts?per_page=100")
+                    .asJsonObject.array("artifacts") ?: return VersionUpdateResult.Failed
+                val latestBuild = artifacts.mapNotNull { it.objectOrNull()?.downloadableBuildFor(run) }.maxOrNull()
+                    ?: continue
+                val comparison = if (currentCiBuild != null) {
+                    if (latestBuild > currentCiBuild) BuildComparison.UpdateAvailable else BuildComparison.CurrentOrNewer
+                } else compareSource(installedBuild, run.headSha, fetchJson)
+                if (comparison == BuildComparison.CurrentOrNewer) return VersionUpdateResult.UpToDate
+                return VersionUpdateResult.UpdateAvailable(
+                    latestTag = latestBuild.label,
+                    releaseUrl = "$RepositoryUrl/actions/runs/${run.id}#artifacts",
+                    isBeta = true,
+                    currentBuildLabel = currentCiBuild?.label ?: installedBuild.label,
+                    comparisonKnown = comparison == BuildComparison.UpdateAvailable,
+                )
             }
             if (rawRuns.size() < RunsPerPage) break
         }
@@ -297,15 +350,46 @@ object VersionUpdateChecker {
     private fun JsonObject.string(key: String): String? =
         get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
 
+    private fun JsonObject.boolean(key: String): Boolean? =
+        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
+
     private fun JsonObject.long(key: String): Long? =
         get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asString?.toLongOrNull()
 
     private fun JsonObject.array(key: String): JsonArray? =
         get(key)?.takeIf { it.isJsonArray }?.asJsonArray
 
+    private fun JsonObject.apkAsset(): JsonObject? =
+        array("assets")?.mapNotNull { it.objectOrNull() }
+            ?.firstOrNull { it.string("name")?.endsWith(".apk", ignoreCase = true) == true }
+
+    private fun JsonObject.apkDownloadUrl(): String? = apkAsset()?.string("browser_download_url")
+
+    private fun JsonObject.toReleaseBuild(headSha: String?): ReleaseBuild? {
+        val name = string("name") ?: return null
+        val match = Regex("^MeiloX-(.+)-(\\d+)(?:\\.([1-9][0-9]*))?\\.apk$").matchEntire(name)
+            ?: return null
+        if (parseVersion(match.groupValues[1]) == null) return null
+        val number = match.groupValues[2].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        val attempt = match.groupValues[3].ifEmpty { "1" }.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val downloadUrl = string("browser_download_url") ?: return null
+        return ReleaseBuild(
+            build = CiBuild(number, attempt),
+            downloadUrl = downloadUrl,
+            headSha = headSha?.takeIf { SHA_PATTERN.matches(it) },
+        )
+    }
+
     private data class VersionTag(
         val name: String,
         val version: ComparableVersion,
+        val downloadUrl: String,
+    )
+
+    private data class ReleaseBuild(
+        val build: CiBuild,
+        val downloadUrl: String,
+        val headSha: String?,
     )
 
     private data class ComparableVersion(

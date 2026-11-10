@@ -232,7 +232,7 @@ class VersionUpdateCheckerTest {
     fun fullRunPagesCanFallBackToTheNextPage() = runBlocking {
         val requests = mutableListOf<String>()
         val result = VersionUpdateChecker.checkWithFetcher("1.54.6", true, ciBuild(34)) { url ->
-            requests += url
+            if (!url.contains("/releases/tags/prerelease")) requests += url
             when {
                 "&page=1" in url -> runs(*Array(30) { run(100L + it, branch = "feature") })
                 "&page=2" in url -> runs(run(35))
@@ -259,11 +259,42 @@ class VersionUpdateCheckerTest {
         assertEquals("https://github.com/NEORUAA/MeiloX/releases/tag/v1.54.7", result.releaseUrl)
         assertFalse(result.isBeta)
         assertEquals(null, result.currentBuildLabel)
-        assertEquals(listOf("https://api.github.com/repos/NEORUAA/MeiloX/tags?per_page=100"), requests)
+        assertEquals(listOf("https://api.github.com/repos/NEORUAA/MeiloX/releases?per_page=100"), requests)
         assertEquals(
             VersionUpdateResult.UpToDate,
             VersionUpdateChecker.checkWithFetcher("1.54.7", false, localBuild()) { tags },
         )
+    }
+
+    @Test
+    fun stableReleaseUsesItsApkAssetUrl() = runBlocking {
+        val result = VersionUpdateChecker.checkWithFetcher("1.54.6", false, localBuild()) {
+            JsonParser.parseString(
+                """[{"tag_name":"v1.55.0","draft":false,"prerelease":false,"assets":[{"name":"MeiloX-1.55.0-42.1.apk","browser_download_url":"https://github.com/NEORUAA/MeiloX/releases/download/v1.55.0/MeiloX-1.55.0-42.1.apk"}]}]""",
+            )
+        } as VersionUpdateResult.UpdateAvailable
+
+        assertEquals("v1.55.0", result.latestTag)
+        assertEquals(
+            "https://github.com/NEORUAA/MeiloX/releases/download/v1.55.0/MeiloX-1.55.0-42.1.apk",
+            result.releaseUrl,
+        )
+    }
+
+    @Test
+    fun betaUsesTheRollingPrereleaseApkAsset() = runBlocking {
+        val result = VersionUpdateChecker.checkWithFetcher("1.54.6", true, ciBuild(34)) {
+            JsonParser.parseString(
+                """{"tag_name":"prerelease","draft":false,"prerelease":true,"target_commitish":"${commitSha(35)}","assets":[{"name":"MeiloX-1.55.0-35.1.apk","browser_download_url":"https://github.com/NEORUAA/MeiloX/releases/download/prerelease/MeiloX-1.55.0-35.1.apk"}]}""",
+            )
+        } as VersionUpdateResult.UpdateAvailable
+
+        assertEquals("beta #35.1", result.latestTag)
+        assertEquals(
+            "https://github.com/NEORUAA/MeiloX/releases/download/prerelease/MeiloX-1.55.0-35.1.apk",
+            result.releaseUrl,
+        )
+        assertTrue(result.isBeta)
     }
 
     @Test
@@ -420,7 +451,7 @@ class VersionUpdateCheckerTest {
         betaUpdatesEnabled = true,
         installedBuild = installedBuild,
     ) { url ->
-        requests += url
+        if (!url.contains("/releases/tags/prerelease")) requests += url
         when {
             "/workflows/main.yml/runs" in url -> runs(run(35))
             "/runs/1035/artifacts" in url -> artifacts(artifact(35))
@@ -459,7 +490,7 @@ class VersionUpdateCheckerTest {
         betaUpdatesEnabled = true,
         installedBuild = ciBuild(number, attempt),
     ) { url ->
-        requests += url
+        if (!url.contains("/releases/tags/prerelease")) requests += url
         if ("/workflows/main.yml/runs" in url) {
             runs
         } else {

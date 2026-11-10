@@ -55,9 +55,8 @@ fun VersionUpdateAlert(
                                         Toast.LENGTH_LONG,
                                     ).show()
                                 }
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(result.releaseUrl)),
-                                )
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.releaseUrl))
+                                context.startActivity(Intent.createChooser(intent, null))
                             }
                         },
                     ),
