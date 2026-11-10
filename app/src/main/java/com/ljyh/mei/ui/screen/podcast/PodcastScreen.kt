@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -390,8 +391,8 @@ fun PodcastDetailScreen(
     val needsRestorationPage = detail != null && detail.hasMore && detail.programs.size < restorationTarget
     val restoringPrograms = needsRestorationPage && !restorationStopped &&
         (restorationRequests < MaxAutomaticRestorationPages || waitingForRestorationPage)
-    var searchActive by remember(id) { mutableStateOf(false) }
-    var query by remember(id) { mutableStateOf("") }
+    var searchActive by rememberSaveable(id) { mutableStateOf(false) }
+    var query by rememberSaveable(id) { mutableStateOf("") }
     var searchResults by remember(id) { mutableStateOf<List<com.ljyh.mei.source.shared.OnlinePodcastProgram>>(emptyList()) }
     var searching by remember(id) { mutableStateOf(false) }
     var searchError by remember(id) { mutableStateOf<String?>(null) }

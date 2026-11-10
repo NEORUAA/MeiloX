@@ -14,13 +14,13 @@ import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.data.model.mediaId
 import com.ljyh.mei.data.model.MediaMetadata
-import kotlin.math.abs
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderGroup
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderSpec
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationScaffold
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationFrame
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderMotion
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderSearch
 import io.github.neoruaa.glasmio.core.GlassAppearance
 import io.github.neoruaa.glasmio.core.GlasmioTheme
 import io.github.neoruaa.glasmio.glass.GlasmioBackdropHost
@@ -34,16 +34,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.Alignment
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,6 +54,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -437,7 +430,6 @@ class SongListRenderingTest {
                             splitHeader = true,
                             hero = { Text("Playlist artwork", Modifier.testTag("PinnedHero")) },
                             onNavigateBack = {},
-                            actionsSeparationProgress = 0f,
                             actions = { emptyList() },
                         ) {
                             items(30) { Text("Song $it", Modifier.fillMaxWidth().height(64.dp).testTag("SplitSong:$it")) }
@@ -473,10 +465,11 @@ class SongListRenderingTest {
     }
 
     @Test
-    fun playlistSearchReservesTheRenderedDoneActionInBothDirectionsAndLargeType() {
+    fun playlistSearchMovesTheWholeActionGroupAndRestoresItInBothDirectionsAndLargeType() {
         val fontScale = mutableStateOf(1f)
         val direction = mutableStateOf(LayoutDirection.Ltr)
-        val doneTextWidthPx = mutableIntStateOf(0)
+        val active = mutableStateOf(false)
+        val query = mutableStateOf(TextFieldValue("Preview"))
         var physicalDensity = 1f
         val motion = object : GlasmioHeaderMotion {
             override val frame = mutableStateOf(GlasmioNavigationFrame(0, "selection", "selection"))
@@ -490,25 +483,30 @@ class SongListRenderingTest {
                 GlasmioTheme(appearance = GlassAppearance(reduceTransparency = true)) {
                     GlasmioBackdropHost(sampledContent = {}, overlayContent = {
                         val doneLabel = stringResource(R.string.done)
+                        val search = rememberGlasmioHeaderSearch(
+                            active = active.value,
+                            initialQuery = query.value,
+                            onQueryChange = { query.value = it },
+                            onSearch = {},
+                            onDismiss = {
+                                active.value = false
+                                query.value = TextFieldValue()
+                            },
+                            placeholder = "Search playlist",
+                            cancelLabel = "Cancel",
+                            autoFocus = false,
+                        )
                         GlasmioNavigationScaffold(motion, header = {
                             GlasmioHeaderSpec("", trailing = listOf(GlasmioHeaderGroup("actions", listOf(
-                                GlasmioHeaderAction("done", "done", "Selection done", {}) {
-                                    Text(doneLabel, modifier = Modifier.onSizeChanged { doneTextWidthPx.intValue = it.width })
+                                GlasmioHeaderAction("search", "search", "Search playlist", { active.value = true }) {
+                                    Text("Search")
                                 },
-                            ))))
+                                GlasmioHeaderAction("done", "done", "Selection done", {}) {
+                                    Text(doneLabel)
+                                },
+                            ), search = search)))
                         }) {
-                            BoxWithConstraints(Modifier.fillMaxSize()) {
-                                val endInset = playlistSearchEndInset(true, false, doneTextWidthPx.intValue)
-                                PlaylistHeaderSearchEditor(
-                                    query = "Preview", onQueryChange = {}, onClose = {},
-                                    contentAlpha = 1f, expansion = 1f,
-                                    focusRequester = remember { FocusRequester() },
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(
-                                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp,
-                                        end = endInset,
-                                    ).width((maxWidth - 68.dp - endInset).coerceAtLeast(44.dp)).height(44.dp),
-                                )
-                            }
+                            Box(Modifier.fillMaxSize())
                         }
                     })
                 }
@@ -516,19 +514,43 @@ class SongListRenderingTest {
         }
         for (layout in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
             for (scale in listOf(1f, 2f)) {
-                compose.runOnIdle { direction.value = layout; fontScale.value = scale }
-                fun actualGap(): Float {
-                    val editor = compose.onNodeWithTag("PlaylistHeaderSearchEditor", useUnmergedTree = true)
-                        .fetchSemanticsNode().boundsInRoot
-                    val done = compose.onNodeWithContentDescription("Selection done").fetchSemanticsNode().boundsInRoot
-                    return if (layout == LayoutDirection.Ltr) done.left - editor.right else editor.left - done.right
+                compose.runOnIdle {
+                    direction.value = layout
+                    fontScale.value = scale
                 }
-                compose.waitUntil(5_000) { abs(actualGap() - 8f * physicalDensity) <= physicalDensity }
-                assertEquals("Editor must leave an 8dp visible gap at font scale $scale in $layout",
-                    8f * physicalDensity, actualGap(), physicalDensity)
+                fun bounds(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                    .fetchSemanticsNode().boundsInRoot
+                val source = bounds("GlasmioHeaderGroup:actions")
                 val done = compose.onNodeWithContentDescription("Selection done").fetchSemanticsNode().boundsInRoot
-                assertEquals("The shared Done action keeps its 44dp hit height", 44f * physicalDensity,
-                    done.height, physicalDensity)
+                assertTrue(source.width > done.width)
+                compose.mainClock.autoAdvance = false
+                compose.onNodeWithContentDescription("Search playlist").performClick()
+                compose.mainClock.advanceTimeByFrame()
+                assertEquals("The morph starts from the whole action group at font scale $scale in $layout",
+                    source.width, bounds("GlasmioHeaderSearchMorph").width, physicalDensity)
+
+                compose.mainClock.advanceTimeBy(2_000)
+                val morph = bounds("GlasmioHeaderSearchMorph")
+                val field = bounds("GlasmioSearchFieldSurface")
+                val cancel = bounds("GlasmioSearchCancelSurface")
+                assertTrue("The floating toolbar clears the original header at font scale $scale in $layout",
+                    morph.top >= source.bottom)
+                assertTrue(field.left >= morph.left && field.right <= morph.right)
+                assertTrue(cancel.left >= morph.left && cancel.right <= morph.right)
+                assertTrue(if (layout == LayoutDirection.Ltr) field.right <= cancel.left else cancel.right <= field.left)
+
+                compose.onNodeWithTag("GlasmioSearchCancelSurface", useUnmergedTree = true).performClick()
+                compose.mainClock.advanceTimeBy(2_000)
+                compose.mainClock.autoAdvance = true
+                compose.runOnIdle {
+                    assertTrue(!active.value)
+                    assertEquals("", query.value.text)
+                    query.value = TextFieldValue("Preview")
+                }
+                compose.onNodeWithTag("GlasmioHeaderSearchMorph", useUnmergedTree = true).assertDoesNotExist()
+                compose.onNodeWithContentDescription("Search playlist").assertIsDisplayed()
+                compose.onNodeWithContentDescription("Selection done").assertIsDisplayed()
+                assertEquals(source, bounds("GlasmioHeaderGroup:actions"))
             }
         }
     }

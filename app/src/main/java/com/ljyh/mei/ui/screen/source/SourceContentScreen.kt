@@ -215,7 +215,7 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
     var savedError by remember(ref, state.providerVersion, state.accountRevision, contentRevision) { mutableStateOf<SourceErrorCode?>(null) }
     var savedAttempt by remember(ref) { mutableIntStateOf(0) }
     var query by rememberSaveable(ref) { mutableStateOf("") }
-    var searchActive by remember(ref) { mutableStateOf(false) }
+    var searchActive by rememberSaveable(ref) { mutableStateOf(false) }
     val play = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,
         viewModel = viewModel, queueRequest = SourceContentRequest.Detail(ref))
     val playAll = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title,

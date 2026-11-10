@@ -1,12 +1,8 @@
 package com.ljyh.mei.ui.screen.playlist
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,58 +14,34 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import io.github.neoruaa.glasmio.scaffold.LocalGlasmioSidebarInsets
-import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.compose.LazyPagingItems
 import io.github.neoruaa.glasmio.glass.render.backdrops.rememberCanvasBackdrop
-import com.kyant.shapes.Capsule
 import com.ljyh.mei.constants.DetailPageHorizontalPadding
 import com.ljyh.mei.constants.PlaylistCoverStyle
 import com.ljyh.mei.constants.PlaylistCoverStyleKey
@@ -92,22 +64,18 @@ import com.ljyh.mei.utils.rememberEnumPreference
 import com.ljyh.mei.utils.rememberPreference
 import io.github.neoruaa.glasmio.core.IosTypography
 import io.github.neoruaa.glasmio.core.LocalGlassColors
-import io.github.neoruaa.glasmio.core.LocalGlassDimensions
 import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
 import io.github.neoruaa.glasmio.core.SheetGroupedListBackgroundAlpha
-import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.glass.LocalGlassBackdrop
-import io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
 import io.github.neoruaa.glasmio.glass.rememberGlasmioMenuAnchorState
 import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderAction
+import io.github.neoruaa.glasmio.scaffold.GlasmioHeaderSearchState
+import io.github.neoruaa.glasmio.scaffold.rememberGlasmioHeaderSearch
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu
 import io.github.neoruaa.glasmio.ui.GlasmioCascadingMenuItem
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 enum class SongListLandscapeLayout {
     Stacked,
@@ -191,18 +159,17 @@ fun SongListDetailScreen(
     val bottomPadding =
         LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
     val playlistTrackTableHeader by rememberPreference(PlaylistTrackTableHeaderKey, false)
-    val searchFocusRequester = remember { FocusRequester() }
-    var doneActionTextWidthPx by remember { mutableIntStateOf(0) }
-    val searchTransition = remember { Animatable(if (isPlaylistSearchActive) 1f else 0f) }
-    val searchProgress = searchTransition.value.coerceIn(0f, 1f)
-    // Keep icon slots fixed while the liquid neck separates, then grow the input to the left.
-    val searchSeparation = (searchProgress / 0.7f).coerceIn(0f, 1f)
-    val searchExpansionStart = 0.7f * io.github.neoruaa.glasmio.glass.ToolbarDetachProgress
-    val searchExpansion =
-        ((searchProgress - searchExpansionStart) / (1f - searchExpansionStart))
-            .coerceIn(0f, 1f)
-            .let { it * it * (3f - 2f * it) }
-    val focusManager = LocalFocusManager.current
+    val actionSearch = onPlaylistSearchQueryChange?.let { onQueryChange ->
+        rememberGlasmioHeaderSearch(
+            active = isPlaylistSearchActive,
+            initialQuery = TextFieldValue(playlistSearchQuery),
+            onQueryChange = { onQueryChange(it.text) },
+            onSearch = {},
+            onDismiss = { onPlaylistSearchActiveChange(false) },
+            placeholder = "搜索歌名、歌手或专辑",
+            cancelLabel = "关闭搜索",
+        )
+    }
     val coverStyle by rememberEnumPreference(PlaylistCoverStyleKey, PlaylistCoverStyle.Combination)
     val backgroundCover =
         if (useCoverBackground) {
@@ -231,32 +198,8 @@ fun SongListDetailScreen(
     val layoutState =
         rememberSongListLayoutState(listState, isContentReady = !isLoading && hasLoadedContent)
 
-    LaunchedEffect(isPlaylistSearchActive, onPlaylistSearchQueryChange != null) {
-        coroutineScope {
-            launch {
-                searchTransition.animateTo(
-                    if (isPlaylistSearchActive) 1f else 0f,
-                    spring(dampingRatio = 0.82f, stiffness = 160f),
-                )
-            }
-            if (isPlaylistSearchActive && onPlaylistSearchQueryChange != null) {
-                snapshotFlow { searchTransition.value }.first { it >= 0.85f }
-                searchFocusRequester.requestFocus()
-            }
-        }
-    }
-
     CompositionLocalProvider(LocalGroupedListBackgroundAlpha provides listBackgroundAlpha) {
-        var searchHostBounds by remember { mutableStateOf(Rect.Zero) }
-        val navigationBounds = io.github.neoruaa.glasmio.scaffold.LocalGlasmioTabBarBounds.current
-        val layoutDirection = LocalLayoutDirection.current
-        val sidebarInsets = LocalGlasmioSidebarInsets.current
-        BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { searchHostBounds = it.boundsInWindow() }) {
-            val hostWidth = maxWidth
-            val buttonSize = LocalGlassDimensions.current.iconButtonSize
-            val searchEndInset =
-                playlistSearchEndInset(selectionMode, detailMenu != null, doneActionTextWidthPx)
-            val searchContentAlpha = ((searchExpansion - 0.12f) / 0.65f).coerceIn(0f, 1f)
+        Box(Modifier.fillMaxSize()) {
             val hero: @Composable () -> Unit = {
                 val headerContent: @Composable () -> Unit = {
                     PlaylistHeader(
@@ -299,11 +242,8 @@ fun SongListDetailScreen(
                 }
             }
             SongListDetailPage(
-                title = if (isPlaylistSearchActive || searchProgress > 0.05f) "" else uiData.title,
-                subtitle =
-                    uiData.creatorName.takeIf {
-                        !isPlaylistSearchActive && searchProgress <= 0.05f && it.isNotBlank()
-                    },
+                title = uiData.title,
+                subtitle = uiData.creatorName.takeIf { it.isNotBlank() },
                 listState = layoutState,
                 backgroundColor = coverBackground.color,
                 backgroundBrush = coverBackground.brush.takeIf { useCoverBackground },
@@ -314,10 +254,10 @@ fun SongListDetailScreen(
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
                 hero = if (!isLoading || adaptiveLandscape) hero else null,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
-                actionsSeparationProgress = searchSeparation,
+                actionSearch = actionSearch,
                 actions = {
                     val searchAction =
-                        if (onPlaylistSearchQueryChange != null && searchProgress <= 0.001f) {
+                        if (onPlaylistSearchQueryChange != null) {
                             listOf(
                                 meiloxHeaderAction(
                                     "search",
@@ -343,10 +283,6 @@ fun SongListDetailScreen(
                                             androidx.compose.ui.res.stringResource(
                                                 com.ljyh.mei.R.string.done
                                             ),
-                                            modifier =
-                                                Modifier.onSizeChanged {
-                                                    doneActionTextWidthPx = it.width
-                                                },
                                             color = LocalGlassColors.current.accent,
                                         )
                                     }
@@ -413,49 +349,6 @@ fun SongListDetailScreen(
                 footer?.invoke(this)
             }
 
-            // The editor stays in this entry, outside the shared button host's hit surface.
-            if (onPlaylistSearchQueryChange != null && searchProgress > 0.001f) {
-                PlaylistHeaderSearchEditor(
-                    query = playlistSearchQuery,
-                    onQueryChange = onPlaylistSearchQueryChange,
-                    onClose = {
-                        onPlaylistSearchQueryChange("")
-                        focusManager.clearFocus()
-                        onPlaylistSearchActiveChange(false)
-                    },
-                    contentAlpha = searchContentAlpha,
-                    expansion = searchExpansion,
-                    focusRequester = searchFocusRequester,
-                    modifier =
-                        Modifier.align(Alignment.TopEnd)
-                            .glasmioAdaptiveContent()
-                            .padding(
-                                top =
-                                    WindowInsets.statusBars
-                                        .asPaddingValues()
-                                        .calculateTopPadding() + 9.dp,
-                                end = searchEndInset,
-                            )
-                            .layout { measurable, constraints ->
-                                // Sidebar travel affects measurement, not composition of the song list.
-                                val sidebarWidth = (sidebarInsets.getLeft(this, layoutDirection) +
-                                    sidebarInsets.getRight(this, layoutDirection)).toDp()
-                                val tabBounds = navigationBounds.value
-                                val navigationStartInset = if (device.isLandscape && tabBounds != null && searchHostBounds != Rect.Zero) {
-                                    (if (layoutDirection == LayoutDirection.Ltr) tabBounds.right - searchHostBounds.left
-                                        else searchHostBounds.right - tabBounds.left).toDp() - sidebarWidth + 12.dp
-                                } else 68.dp
-                                val expandedWidth = (hostWidth - sidebarWidth - maxOf(68.dp, navigationStartInset) - searchEndInset)
-                                    .coerceAtLeast(0.dp)
-                                val width = (buttonSize + (expandedWidth - buttonSize) * searchExpansion).roundToPx()
-                                    .coerceIn(constraints.minWidth, constraints.maxWidth)
-                                val child = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
-                                layout(child.width, child.height) { child.placeRelative(0, 0) }
-                            }
-                            .height(buttonSize),
-                )
-            }
-
             if (detailMenuOpen && detailMenu != null) {
                 io.github.neoruaa.glasmio.ui.GlasmioCascadingMenu(
                     anchorBounds = detailMenuAnchor.bounds,
@@ -473,69 +366,6 @@ fun SongListDetailScreen(
             }
 
             overlayContent()
-        }
-    }
-}
-
-/** Reserve the shared action's measured content, 20dp button padding and 8dp optical gap. */
-@Composable
-internal fun playlistSearchEndInset(selectionMode: Boolean, hasDetailMenu: Boolean, doneTextWidthPx: Int): Dp {
-    val actionWidth = when {
-        selectionMode -> maxOf(44.dp, with(LocalDensity.current) { doneTextWidthPx.toDp() } + 20.dp)
-        hasDetailMenu -> 44.dp
-        else -> 0.dp
-    }
-    return 16.dp + if (actionWidth > 0.dp) actionWidth + 8.dp else 0.dp
-}
-
-@Composable
-internal fun PlaylistHeaderSearchEditor(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClose: () -> Unit,
-    contentAlpha: Float,
-    expansion: Float,
-    focusRequester: FocusRequester,
-    modifier: Modifier = Modifier,
-) {
-    val colors = LocalGlassColors.current
-    val buttonSize = LocalGlassDimensions.current.iconButtonSize
-    GlassSurface(modifier = modifier.testTag("PlaylistHeaderSearchEditor"), shape = Capsule()) {
-        Row(Modifier.fillMaxSize().clip(Capsule()), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp)
-                        .focusRequester(focusRequester).graphicsLayer { alpha = contentAlpha },
-                    singleLine = true,
-                    textStyle = IosTypography.body.copy(color = colors.content),
-                    cursorBrush = SolidColor(colors.accent),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    decorationBox = { innerTextField ->
-                        if (query.isEmpty()) Text(
-                            "搜索歌名、歌手或专辑", style = IosTypography.body,
-                            color = colors.tertiaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        innerTextField()
-                    },
-                )
-            }
-            Box(
-                Modifier.size(buttonSize).clickable(
-                    interactionSource = null, indication = null, role = Role.Button, onClick = onClose,
-                ),
-                contentAlignment = Alignment.Center,
-            ) {
-                androidx.compose.animation.Crossfade(
-                    targetState = expansion > 0.15f,
-                    animationSpec = androidx.compose.animation.core.tween(120),
-                    label = "PlaylistSearchIcon",
-                ) { active ->
-                    SfIcon(if (active) SfSymbol.Close else SfSymbol.Search,
-                        if (active) "关闭歌单搜索" else "搜索歌单")
-                }
-            }
         }
     }
 }
@@ -581,7 +411,7 @@ internal fun SongListDetailPage(
     splitHeader: Boolean,
     hero: (@Composable () -> Unit)?,
     onNavigateBack: () -> Unit,
-    actionsSeparationProgress: Float,
+    actionSearch: GlasmioHeaderSearchState? = null,
     actions: @Composable () -> List<GlasmioHeaderAction>,
     content: LazyListScope.() -> Unit,
 ) {
@@ -597,7 +427,7 @@ internal fun SongListDetailPage(
             showsLargeTitle = false,
             verticalArrangement = Arrangement.spacedBy(0.dp),
             onNavigateBack = onNavigateBack,
-            actionsSeparationProgress = actionsSeparationProgress,
+            actionSearch = actionSearch,
             actions = actions,
         ) {
             if (hero != null) item(key = "playlist-hero") { hero() }
@@ -612,25 +442,26 @@ internal fun SongListDetailPage(
         backgroundBrush = backgroundBrush,
         bottomPadding = bottomPadding,
         onNavigateBack = onNavigateBack,
-        actionsSeparationProgress = actionsSeparationProgress,
+        actionSearch = actionSearch,
         actions = actions,
         topBarBlurProgress =
             if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
                 1f
             else 0f,
     ) { padding ->
+        val panePadding = remember(padding, horizontalContentPadding) {
+            object : PaddingValues by padding {
+                override fun calculateLeftPadding(layoutDirection: LayoutDirection) = horizontalContentPadding
+                override fun calculateRightPadding(layoutDirection: LayoutDirection) = horizontalContentPadding
+            }
+        }
         Row(Modifier.fillMaxSize()) {
             Column(
                 Modifier.weight(1f)
                     .fillMaxHeight()
                     .testTag("DetailHeroPane")
                     .verticalScroll(rememberScrollState())
-                    .padding(
-                        start = horizontalContentPadding,
-                        end = horizontalContentPadding,
-                        top = padding.calculateTopPadding(),
-                        bottom = padding.calculateBottomPadding(),
-                    ),
+                    .padding(panePadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 hero?.invoke()
@@ -638,13 +469,7 @@ internal fun SongListDetailPage(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxHeight().testTag("DetailTrackPane"),
-                contentPadding =
-                    PaddingValues(
-                        top = padding.calculateTopPadding(),
-                        start = horizontalContentPadding,
-                        end = horizontalContentPadding,
-                        bottom = padding.calculateBottomPadding(),
-                    ),
+                contentPadding = panePadding,
             ) {
                 // Preserve the hero slot so list indices survive orientation changes.
                 item(key = "playlist-hero") {}
