@@ -206,6 +206,8 @@ import com.ljyh.mei.di.repository.ColorRepository
 import com.ljyh.mei.playback.MusicService
 import com.ljyh.mei.playback.PlayerConnection
 import com.ljyh.mei.playback.queue.ListQueue
+import com.ljyh.mei.recognition.RecognitionSource
+import com.ljyh.mei.recognition.SongRecognitionSession
 import com.ljyh.mei.ui.component.ClipboardLinkPrompt
 import com.ljyh.mei.ui.component.IconButton
 import com.ljyh.mei.ui.component.VersionUpdateAlert
@@ -293,6 +295,10 @@ import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val ACTION_OPEN_SONG_RECOGNITION = "com.ljyh.mei.action.OPEN_SONG_RECOGNITION"
+        const val EXTRA_RECOGNITION_PROVIDER = "recognition_provider"
+    }
 
     @Inject
     lateinit var database: AppDatabase
@@ -307,10 +313,15 @@ class MainActivity : ComponentActivity() {
     lateinit var sourceLinks: com.ljyh.mei.source.core.SourceLinkRouter
     @Inject
     lateinit var sourceRouter: com.ljyh.mei.source.core.SourceRouter
+    @Inject
+    lateinit var recognitionSession: SongRecognitionSession
+
     private var userData by mutableStateOf(UserData.VISITOR)
     private var pictureInPictureMode by mutableStateOf(false)
     private var floatingLyricsRequest: Boolean? = null
     private var musicService: MusicService? = null
+    private var openSongRecognition by mutableStateOf(false)
+    private var recognitionProviderId: String? = null
 
 
     @androidx.annotation.OptIn(UnstableApi::class)
@@ -320,6 +331,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pictureInPictureMode = isInPictureInPictureMode
         readFloatingLyricsIntent(intent)
+        if (savedInstanceState == null) readRecognitionIntent(intent)
         enableEdgeToEdge()
         val contentRoot = findViewById<android.view.View>(android.R.id.content)
         fun pageInsets(insets: WindowInsetsCompat) = retainLandscapeStatusBarSpace(
@@ -781,6 +793,18 @@ class MainActivity : ComponentActivity() {
                         collapsedBound = collapsedBound,
                         expandedBound = maxHeight,
                     )
+                    LaunchedEffect(openSongRecognition, playerBottomSheetState) {
+                        if (openSongRecognition) {
+                            if (!playerBottomSheetState.isCollapsed && !playerBottomSheetState.isDismissed) {
+                                playerBottomSheetState.collapseSoft()
+                            }
+                            recognitionSession.selectSource(RecognitionSource.Playback)
+                            Screen.SongRecognition.navigate(navController) {
+                                recognitionProviderId?.let { addQuery("providerId", Uri.encode(it)) }
+                            }
+                            openSongRecognition = false
+                        }
+                    }
                     LaunchedEffect(playerBottomSheetState, focusManager, keyboardController) {
                         snapshotFlow { playerBottomSheetState.isContentVisible }.collect { visible ->
                             if (visible) {
@@ -1549,7 +1573,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         readFloatingLyricsIntent(intent)
+        readRecognitionIntent(intent)
         applyFloatingLyricsRequest()
+    }
+
+    private fun readRecognitionIntent(intent: Intent) {
+        if (intent.action != ACTION_OPEN_SONG_RECOGNITION) return
+        recognitionProviderId = intent.getStringExtra(EXTRA_RECOGNITION_PROVIDER)
+        openSongRecognition = true
     }
 
     override fun onPostResume() {

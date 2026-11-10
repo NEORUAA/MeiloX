@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.DisposableEffect
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.data.model.toMediaItem
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import com.ljyh.mei.playback.queue.ListQueue
 import com.ljyh.mei.source.api.SourceFeedCard
 import com.ljyh.mei.source.api.SourceFeedTarget
@@ -142,6 +143,7 @@ import com.ljyh.mei.source.api.LibraryCapability
 import com.ljyh.mei.source.api.LibraryCollection
 import com.ljyh.mei.source.api.PlaylistEditAction
 import com.ljyh.mei.source.api.PlaylistEditCapability
+import com.ljyh.mei.source.api.ProviderIds
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceFeedLayout
 import com.ljyh.mei.source.api.SourceFeedSection
@@ -730,6 +732,10 @@ fun SourceLibraryScreen(
     }
     val ownState = if (!hasCoreCollection) SourceContentState(providerId = selectedId)
         else state.takeIf { it.providerId == selectedId } ?: SourceContentState(providerId = selectedId, loading = true)
+    val playingLikedTrack = if (selectedId == ProviderIds.NETEASE && hasCoreCollection &&
+        page == LibraryPage.Songs && !showArtists) {
+        player?.mediaMetadata?.collectAsState()?.value?.takeIf { it.supportsNeteaseSongActions }?.trackRef
+    } else null
     val extra = createdState.takeIf { needsCreated && it.providerId == selectedId }
     val displayed = if (page == LibraryPage.Playlists && !showArtists) when (playlistFilter) {
         "created" -> if (collection == LibraryCollection.CREATED_PLAYLISTS) ownState.items else extra?.items.orEmpty()
@@ -854,6 +860,7 @@ fun SourceLibraryScreen(
                         is SourceItem.TrackItem -> LandscapeMediaRow(modifier = Modifier.padding(horizontal = if (landscape) 0.dp else 4.dp), landscape = landscape,
                             image = item.artworkUrl, title = item.title, artist = item.track.artists.joinToString(" / ") { it.name },
                             detail = if (landscape) formatDuration(item.track.durationMs) else "", album = item.track.album.title,
+                            isCurrentTrack = item.ref == playingLikedTrack,
                             favorite = true, showDivider = item.ref != filtered.lastOrNull()?.ref,
                             onClick = { val tracks = filtered.filterIsInstance<SourceItem.TrackItem>().map { it.track }; playVisible(tracks, tracks.indexOf(item.track)) },
                             onMore = { selection = item.track to it })
@@ -872,6 +879,15 @@ fun SourceLibraryScreen(
                     }
                 }
 
+            }
+            if (playingLikedTrack != null && !searchActive && query.text.isBlank() && filtered.isNotEmpty()) {
+                SourceTrackLocateButton(
+                    viewModel, SourceContentRequest.Library(collection), ownState, playingLikedTrack, listState,
+                    // Search, play actions, divider, and the optional title and page tabs.
+                    leadingItems = 3 + (if (landscape) 0 else 1) + (if (category == null) 1 else 0),
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .padding(end = 20.dp, bottom = bottom + 16.dp),
+                )
             }
         }
         }

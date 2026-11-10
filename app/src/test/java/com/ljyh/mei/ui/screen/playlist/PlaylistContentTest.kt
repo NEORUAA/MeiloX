@@ -703,6 +703,42 @@ class PlaylistContentTest {
     }
 
     @Test
+    fun locatingAnUnloadedTrackUsesTheSourcePagesWithoutChangingTrackOrder() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = DetailProvider()
+        val registry = ProviderRegistry(listOf(provider))
+        val router = SourceRouter(registry, SourceMutationCoordinator(registry, backgroundScope))
+        val model = SourceContentViewModel(router, SourcePreferences(MemoryPreferences()), registry)
+        val ref = PlaylistRef(provider.id, "playlist/opaque")
+        val target = provider.tracks[42].ref
+        try {
+            for (request in listOf(
+                SourceContentRequest.Detail(ref),
+                SourceContentRequest.Library(LibraryCollection.LIKED_TRACKS, provider.id),
+            )) {
+                provider.providesTrackIndex = true
+                provider.pageRequests.clear()
+                model.open(request)
+                runCurrent()
+                assertEquals(true, model.indexedTrackMembership(request, target))
+                assertEquals(false, model.indexedTrackMembership(request, TrackRef("another-source", target.trackId)))
+                assertEquals(false, model.indexedTrackMembership(request, TrackRef(provider.id, "missing")))
+                provider.providesTrackIndex = false
+                assertEquals(null, model.indexedTrackMembership(request, target))
+                assertEquals(listOf(0), provider.pageRequests.map { it.offset })
+
+                assertEquals(42, model.locateTrack(request, target))
+                assertEquals(listOf(0, 30), provider.pageRequests.map { it.offset })
+                assertEquals(provider.tracks.take(60).map { it.ref }, model.state.value.items.map { it.ref })
+                assertTrue(model.state.value.hasMore)
+            }
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
     fun cachedAndFetchedTracksFollowCanonicalIdsWithoutRefetchingCachedRows() = runBlocking {
         val requests = mutableListOf<List<String>>()
         val source = PlaylistTrackSource(
@@ -763,15 +799,17 @@ class PlaylistContentTest {
     }
 
     private class DetailProvider : MusicProvider, PlaylistCapability, AlbumCapability,
-        PlaylistEditCapability, AccountRevisionCapability {
+        PlaylistEditCapability, AccountRevisionCapability, CatalogIndexCapability, LibraryCapability {
         override val id = "detail-fixture"
         override val displayName = "Detail fixture"
-        override val capabilities = setOf(SourceCapability.PLAYLIST, SourceCapability.ALBUM, SourceCapability.PLAYLIST_EDIT)
+        override val capabilities = setOf(SourceCapability.PLAYLIST, SourceCapability.ALBUM, SourceCapability.PLAYLIST_EDIT, SourceCapability.LIBRARY)
+        override val collections = setOf(LibraryCollection.LIKED_TRACKS)
         override val playlistEditActions = setOf(PlaylistEditAction.REORDER_TRACKS)
         override val accountRevision = MutableStateFlow<String?>("account-A")
         var tracks = (1..65).map { Track(TrackRef(id, "track/$it:opaque"), "Track $it", emptyList()) }
         var reportedTrackCount: Int? = null
         var invalidContinuation = false
+        var providesTrackIndex = true
         var titleSuffix = ""
         var beforeDetails: suspend (ContentRef) -> Unit = {}
         var beforeTracks: suspend (PageRequest) -> Unit = {}
@@ -802,6 +840,13 @@ class PlaylistContentTest {
         }
         override suspend fun reorderTracks(ref: PlaylistRef, tracks: List<TrackRef>) {
             savedOrders += tracks.toList()
+        }
+        override suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection?) =
+            if (providesTrackIndex) SourceTrackIndex(playlistId, tracks.map { it.ref }) else null
+
+        override suspend fun library(collection: LibraryCollection, page: PageRequest): SourcePage<SourceItem> {
+            val loaded = trackPage(page)
+            return SourcePage(loaded.items.map { SourceItem.TrackItem(it) }, loaded.hasMore, loaded.nextCursor)
         }
 
         private suspend fun trackPage(request: PageRequest): SourcePage<Track> {

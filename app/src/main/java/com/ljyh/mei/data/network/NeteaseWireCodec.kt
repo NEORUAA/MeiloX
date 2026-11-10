@@ -45,6 +45,8 @@ internal object NeteaseWireCodec {
 
     internal fun encodeRequest(request: Request, arguments: Map<String, String>): Request {
         val mode = mode(arguments)
+        // Plain API queries already carry their complete payload in the URL.
+        if (request.method == "GET" && mode == "api" && arguments.size == 1) return request
         if (request.method != "POST") invalid()
         val body = request.body ?: invalid()
         if (body.contentLength() !in 0..MAX_REQUEST_BYTES.toLong()) invalid()

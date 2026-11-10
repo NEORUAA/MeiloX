@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -221,6 +222,50 @@ class SourceContentViewModel internal constructor(
         val token = generation
         mutableState.value = current.copy(loading = true, error = null)
         pagination = viewModelScope.launch { load(requested, current.providerId, token, append = true) }
+    }
+
+    internal suspend fun indexedTrackMembership(requested: SourceContentRequest, track: TrackRef): Boolean? {
+        val owner = displayedProvider ?: return false
+        if (requested != displayedRequest || requested != request.value || owner.id != track.providerId) return false
+        val catalog = owner as? CatalogIndexCapability ?: return null
+        val playlistId = ((requested as? SourceContentRequest.Detail)?.ref as? PlaylistRef)?.playlistId
+        val collection = (requested as? SourceContentRequest.Library)?.collection
+        if (playlistId == null && collection != LibraryCollection.LIKED_TRACKS) return false
+        val token = generation
+        val revision = contentRevision.value
+        val index = try {
+            catalog.completeTrackIds(playlistId.orEmpty(), collection)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return false
+        }
+        if (token != generation || revision != contentRevision.value || requested != request.value ||
+            registry.provider(owner.id) !== owner) return false
+        return index?.let { (playlistId == null || it.playlistId == playlistId) && track in it.ids }
+    }
+
+    internal suspend fun locateTrack(requested: SourceContentRequest, track: TrackRef): Int? {
+        val token = generation
+        val revision = contentRevision.value
+        var retried = false
+        while (token == generation && revision == contentRevision.value && requested == displayedRequest &&
+            requested == request.value && track.providerId == displayedProvider?.id) {
+            val current = state.value
+            val index = current.items.indexOfFirst { it.ref == track }
+            if (index >= 0) return index
+            if (current.refreshing || !current.hasMore) return null
+
+            val pending = pagination?.takeIf { it.isActive } ?: run {
+                if (current.loading || current.error != null && retried) return null
+                if (current.error != null) retried = true
+                loadMore()
+                if (state.value == current) return null
+                pagination ?: return null
+            }
+            if (withTimeoutOrNull(10_000L) { pending.join() } == null) return null
+        }
+        return null
     }
 
     private suspend fun load(requested: SourceContentRequest, id: String, token: Long, append: Boolean, refresh: Boolean = false,
