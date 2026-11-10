@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -69,20 +70,31 @@ internal class PlaylistLocateRegistration(
 }
 
 internal class PlaylistLocateHostState {
-    var registration by mutableStateOf<PlaylistLocateRegistration?>(null)
+    private val registrations = mutableStateMapOf<Any, PlaylistLocateRegistration>()
+    var activeEntryKey by mutableStateOf<Any?>(null)
     var navigationVisible by mutableStateOf(true)
 
-    fun register(value: PlaylistLocateRegistration) {
-        registration = value
+    val registration: PlaylistLocateRegistration?
+        get() = registrationFor(activeEntryKey)
+
+    fun registrationFor(entryKey: Any?): PlaylistLocateRegistration? =
+        entryKey?.let { registrations[it] }
+
+    fun register(entryKey: Any?, value: PlaylistLocateRegistration) {
+        if (entryKey != null) registrations[entryKey] = value
     }
 
-    fun unregister(value: PlaylistLocateRegistration) {
-        if (registration === value) registration = null
+    fun unregister(entryKey: Any?, value: PlaylistLocateRegistration) {
+        if (entryKey != null && registrations[entryKey] === value) registrations.remove(entryKey)
     }
 }
 
 internal val LocalPlaylistLocateHost =
     androidx.compose.runtime.staticCompositionLocalOf<PlaylistLocateHostState?> { null }
+
+/** Retained navigation entries must never publish another entry's locator into their header. */
+internal val LocalPlaylistLocateOwner =
+    androidx.compose.runtime.staticCompositionLocalOf<Any?> { null }
 
 @Composable
 internal fun PlaylistLocateButton(
@@ -95,7 +107,8 @@ internal fun PlaylistLocateButton(
 ) {
     val context = LocalContext.current
     val host = LocalPlaylistLocateHost.current
-    val registration = remember(listState, track, leadingItems) {
+    val owner = LocalPlaylistLocateOwner.current
+    val registration = remember(owner, listState, track, leadingItems) {
         PlaylistLocateRegistration(listState, track, leadingItems)
     }
     val resolveIndex by rememberUpdatedState(findTrackIndex)
@@ -104,10 +117,10 @@ internal fun PlaylistLocateButton(
         registration.modifier = modifier
         registration.available = available
         registration.resolveIndex = resolveIndex
-        host?.register(registration)
+        host?.register(owner, registration)
     }
-    DisposableEffect(host, registration) {
-        onDispose { host?.unregister(registration) }
+    DisposableEffect(host, owner, registration) {
+        onDispose { host?.unregister(owner, registration) }
     }
 
     LaunchedEffect(listState, available) {
@@ -146,7 +159,7 @@ internal fun PlaylistLocateButton(
 
     // The activity renders the registered control in the chrome layer. Keep a
     // fallback here for previews and isolated callers that do not provide a host.
-    if (host == null) {
+    if (host == null || owner == null) {
         PlaylistLocateButtonChrome(registration, modifier, navigationVisible = true)
     }
 }
@@ -155,13 +168,14 @@ internal fun PlaylistLocateButton(
 internal fun PlaylistLocateChromeLayer(
     host: PlaylistLocateHostState,
     bottomPadding: () -> Dp,
+    topBarMode: Boolean = false,
 ) {
     host.registration?.let { registration ->
         PlaylistLocateButtonChrome(
             registration = registration,
             modifier = registration.modifier,
             bottomPadding = bottomPadding,
-            navigationVisible = host.navigationVisible,
+            navigationVisible = host.navigationVisible && !topBarMode,
         )
     }
 }

@@ -240,6 +240,7 @@ import io.github.neoruaa.glasmio.glass.LocalBottomControlContact
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.neoruaa.glasmio.ui.GlasmioTabItem
 import io.github.neoruaa.glasmio.ui.GlasmioTabBar
+import io.github.neoruaa.glasmio.ui.GlasmioTabBarDefaults
 import io.github.neoruaa.glasmio.ui.GlasmioSidebarToolbar
 import io.github.neoruaa.glasmio.ui.GlasmioSidebarRow
 import io.github.neoruaa.glasmio.ui.GlasmioSidebarSectionHeader
@@ -1102,6 +1103,7 @@ class MainActivity : ComponentActivity() {
                                     miniAnchor + NavigationBarBottomMargin
                                 },
                                 playlistLocateHost = playlistLocateHost,
+                                topBarMode = isLandscape,
                                 state = playerBottomSheetState,
                                 backdrop = bottomControlsBackdrop,
                                 pageDarkAppearance = pageDarkAppearance,
@@ -1191,6 +1193,9 @@ class MainActivity : ComponentActivity() {
                                         // transition, before the outgoing page is disposed.
                                         playlistLocateHost.navigationVisible =
                                             headerFrame.phase == GlasmioNavigationPhase.Idle
+                                        playlistLocateHost.activeEntryKey =
+                                            if (headerFrame.phase == GlasmioNavigationPhase.Idle) headerFrame.toEntryKey
+                                            else headerFrame.fromEntryKey
                                     }
                                     LaunchedEffect(pageHeaders, headerMotion, backStack) {
                                         snapshotFlow {
@@ -1358,6 +1363,9 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }) else null,
+                                        topBarPreferredWidth = if (isLandscape) {
+                                            GlasmioTabBarDefaults.preferredWidth(navigationTabs, showsSidebar = true)
+                                        } else null,
                                     ) {
                                         CompositionLocalProvider(
                                             LocalMiniPlayerChromeMotion provides miniPlayerChromeMotion,
@@ -1693,6 +1701,7 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
     searchBounds: androidx.compose.ui.geometry.Rect?,
     locatorBottomPadding: () -> Dp,
     playlistLocateHost: PlaylistLocateHostState,
+    topBarMode: Boolean,
     state: GlasmioBottomSheetState,
     backdrop: Backdrop,
     pageDarkAppearance: Boolean?,
@@ -1714,7 +1723,7 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
             LocalMiniPlayerSearchBounds provides searchBounds,
             LocalMiniPlayerVerticalOffset provides miniPlayerVerticalOffset,
         ) {
-            PlaylistLocateChromeLayer(playlistLocateHost, locatorBottomPadding)
+            PlaylistLocateChromeLayer(playlistLocateHost, locatorBottomPadding, topBarMode)
         }
     }
     Box(

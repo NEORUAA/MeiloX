@@ -104,6 +104,7 @@ fun sourcePickerHeaderAction(
         contentDescription = "切换音源",
         onClick = { expanded = true },
         menuAnchor = anchor,
+        overflowSystemName = "music.note.list",
         enabled = choices.isNotEmpty(),
     ) { SfIcon("music.note.list", null, size = 22.dp) }
 }

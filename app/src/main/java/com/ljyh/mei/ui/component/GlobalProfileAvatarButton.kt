@@ -41,6 +41,7 @@ fun globalProfileHeaderAction(): GlasmioHeaderAction {
         contentDescription = profile.account?.displayName ?: profile.providerName.ifBlank { "账号" },
         enabled = profile.providerId.isNotBlank() && profile.providerId != ProviderIds.LOCAL,
         onClick = { openSourceProfile(navController, profile, sourceViewModel::refresh) },
+        overflowSystemName = "person.crop.circle",
     ) { SourceProfileImage(profile) }
 }
 
