@@ -839,6 +839,14 @@ class ScriptPluginPolicyTest {
         val api = NeteaseWireCodec.encodeRequest(request, mapOf("mode" to "api"))
         assertEquals(request.url, api.url)
         assertEquals(listOf("42", "{}", "false"), (api.body as FormBody).let { form -> (0 until form.size).map(form::value) })
+
+        val query = request.newBuilder().get().build()
+        assertSame(query, NeteaseWireCodec.encodeRequest(query, mapOf("mode" to "api")))
+        for (arguments in listOf(mapOf("mode" to "eapi", "signingPath" to "/path"),
+            mapOf("mode" to "api", "formFields" to """{"extra":"value"}"""))) {
+            try { NeteaseWireCodec.encodeRequest(query, arguments); fail("Expected GET with codec fields to be rejected") }
+            catch (error: SourceException) { assertEquals(SourceErrorCode.INVALID_RESPONSE, error.code) }
+        }
     }
 
     @Test fun wireDecodeBoundsEncryptedAndCompressedResponsesWithoutServiceKnowledge() {

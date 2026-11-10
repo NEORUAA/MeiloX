@@ -4,9 +4,12 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.projection.MediaProjection
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -18,56 +21,61 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONObject
 import kotlin.coroutines.resumeWithException
 import kotlin.math.floor
 
-enum class RecognitionDuration(val seconds: Int?) {
-    Quick(3), Balanced(6), Extended(9), Continuous(null)
-}
-
 class SongRecognitionRecorder(private val context: Context) {
-    suspend fun record(seconds: Int): FloatArray = withContext(Dispatchers.IO) {
+    suspend fun record(seconds: Int, projection: MediaProjection?): FloatArray = withContext(Dispatchers.IO) {
         check(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            "Microphone permission is required"
+            "Audio recording permission is required"
         }
         require(seconds in 1..15)
-        val sourceRate = preferredSampleRate()
-        val minBuffer = AudioRecord.getMinBufferSize(
-            sourceRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        check(minBuffer > 0) { "No microphone input is available" }
-        val recorder = createRecorder(sourceRate, minBuffer)
-        val targetFrames = sourceRate * seconds
-        val samples = ShortArray(targetFrames)
-        var offset = 0
+        val channels = if (projection == null) 1 else 2
+        val channelMask = if (channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO
+        val sourceRate = listOf(48_000, 44_100, 16_000, 8_000).firstOrNull { rate ->
+            minimumBufferSize(rate, channelMask) > 0
+        } ?: error("No compatible audio input format")
+        val minBuffer = minimumBufferSize(sourceRate, channelMask)
+        val recorder = if (projection == null) createMicrophoneRecorder(sourceRate, minBuffer)
+        else createPlaybackRecorder(projection, sourceRate, channelMask, minBuffer)
+        val samples = ShortArray(sourceRate * seconds * channels)
         try {
-            recorder.startRecording()
-            while (offset < targetFrames) {
-                ensureActive()
-                val read = recorder.read(samples, offset, minOf(minBuffer / 2, targetFrames - offset))
-                check(read >= 0) { "Microphone read failed ($read)" }
-                offset += read
+            val chunkSize = (minBuffer / Short.SIZE_BYTES / channels).coerceAtLeast(1) * channels
+            val complete = withTimeoutOrNull(seconds * 1_000L + 5_000L) {
+                recorder.startRecording()
+                check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Audio recording did not start" }
+                var offset = 0
+                while (offset < samples.size) {
+                    ensureActive()
+                    val read = recorder.read(
+                        samples, offset, minOf(chunkSize, samples.size - offset), AudioRecord.READ_NON_BLOCKING,
+                    )
+                    check(read >= 0) { "Audio read failed ($read)" }
+                    if (read == 0) delay(10) else offset += read
+                }
+                true
             }
+            check(complete == true) { "Audio recording timed out" }
         } finally {
             runCatching { recorder.stop() }
             recorder.release()
         }
-        resample(samples, offset, sourceRate, 8_000)
+        resample(samples, channels, sourceRate, 8_000)
     }
 
-    private fun preferredSampleRate(): Int = listOf(48_000, 44_100, 16_000, 8_000).firstOrNull { rate ->
-        AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT) > 0
-    } ?: 44_100
+    private fun minimumBufferSize(rate: Int, channelMask: Int): Int =
+        AudioRecord.getMinBufferSize(rate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
 
-    private fun createRecorder(sampleRate: Int, minBuffer: Int): AudioRecord {
+    @SuppressLint("MissingPermission")
+    private fun createMicrophoneRecorder(sampleRate: Int, minBuffer: Int): AudioRecord {
         val bufferSize = maxOf(minBuffer * 2, sampleRate)
         for (source in listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)) {
             val recorder = runCatching {
@@ -85,14 +93,44 @@ class SongRecognitionRecorder(private val context: Context) {
         error("Could not initialize microphone input")
     }
 
-    private fun resample(input: ShortArray, count: Int, sourceRate: Int, targetRate: Int): FloatArray {
-        val targetCount = floor(count.toDouble() * targetRate / sourceRate).toInt()
+    @SuppressLint("MissingPermission")
+    private fun createPlaybackRecorder(
+        projection: MediaProjection,
+        sampleRate: Int,
+        channelMask: Int,
+        minBuffer: Int,
+    ): AudioRecord {
+        val capture = AudioPlaybackCaptureConfiguration.Builder(projection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+        val format = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(channelMask)
+            .build()
+        return AudioRecord.Builder()
+            .setAudioFormat(format)
+            .setAudioPlaybackCaptureConfig(capture)
+            .setBufferSizeInBytes(minBuffer * 2)
+            .build()
+    }
+
+    private fun resample(input: ShortArray, channels: Int, sourceRate: Int, targetRate: Int): FloatArray {
+        val frames = input.size / channels
+        val targetCount = floor(frames.toDouble() * targetRate / sourceRate).toInt()
+        fun sample(frame: Int): Float {
+            val offset = frame * channels
+            return if (channels == 1) input[offset].toFloat()
+            else (input[offset] + input[offset + 1]) * 0.5f
+        }
         return FloatArray(targetCount) { index ->
             val sourcePosition = index.toDouble() * sourceRate / targetRate
-            val left = floor(sourcePosition).toInt().coerceIn(0, count - 1)
-            val right = (left + 1).coerceAtMost(count - 1)
+            val left = floor(sourcePosition).toInt().coerceIn(0, frames - 1)
+            val right = (left + 1).coerceAtMost(frames - 1)
             val fraction = (sourcePosition - left).toFloat()
-            ((input[left] * (1f - fraction) + input[right] * fraction) / Short.MAX_VALUE)
+            (sample(left) * (1f - fraction) + sample(right) * fraction) / Short.MAX_VALUE
         }
     }
 }

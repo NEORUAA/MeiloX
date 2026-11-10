@@ -5,6 +5,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -177,7 +178,7 @@ fun SongListDetailScreen(
     usePlaylistPortraitHeader: Boolean = false,
     favoriteTrackIds: Set<String> = emptySet(),
     onTrackMore: (MediaMetadata, Rect) -> Unit,
-    overlayContent: @Composable () -> Unit = {},
+    overlayContent: @Composable BoxScope.() -> Unit = {},
     artwork: DetailArtworkViewModel = hiltViewModel(),
 ) {
     val playerConnection = LocalPlayerConnection.current

@@ -65,6 +65,7 @@ internal fun LandscapeMediaRow(
     navigationArrow: Boolean = false,
     footer: (@Composable () -> Unit)? = null,
     landscape: Boolean = rememberDeviceInfo().isLandscape,
+    isCurrentTrack: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     var anchor by remember(title, image) { mutableStateOf(Rect.Zero) }
@@ -84,6 +85,7 @@ internal fun LandscapeMediaRow(
             onMore = onMore,
             navigationArrow = navigationArrow,
             footer = footer,
+            isCurrentTrack = isCurrentTrack,
         )
         return
     }
@@ -105,7 +107,8 @@ internal fun LandscapeMediaRow(
                     PlayingImageView(imageUrl = image, isPlaying = false,
                         modifier = Modifier.size(songListCoverSize(true)).clip(ContinuousRoundedRectangle(songListCoverCornerRadius(true))))
                     Text(title, Modifier.weight(if (showAlbum) 1f else 1.25f),
-                        fontSize = 16.sp, fontWeight = FontWeight.Normal, color = colors.content,
+                        fontSize = 16.sp, fontWeight = FontWeight.Normal,
+                        color = if (isCurrentTrack) colors.accent else colors.content,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(artist, Modifier.weight(if (showAlbum) 0.85f else 1f),
                         fontSize = 16.sp, color = colors.secondaryContent,
@@ -153,6 +156,7 @@ internal fun PortraitMediaRow(
     onMore: ((Rect) -> Unit)?,
     navigationArrow: Boolean,
     footer: (@Composable () -> Unit)?,
+    isCurrentTrack: Boolean = false,
 ) {
     val colors = LocalGlassColors.current
     var anchor by remember(title, image) { mutableStateOf(Rect.Zero) }
@@ -180,7 +184,7 @@ internal fun PortraitMediaRow(
                             title,
                             style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
                             fontWeight = FontWeight.Normal,
-                            color = colors.content,
+                            color = if (isCurrentTrack) colors.accent else colors.content,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )

@@ -54,6 +54,7 @@ import com.ljyh.mei.constants.DetailPageHorizontalPadding
 import com.ljyh.mei.constants.songListCoverCornerRadius
 import com.ljyh.mei.constants.songListCoverSize
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.supportsNeteaseSongActions
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import com.ljyh.mei.ui.component.playlist.AnimatedSoundWave
 import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
@@ -84,6 +85,7 @@ internal fun DetailTrackRow(
     val colors = LocalGlassColors.current
     val compactRows = rememberDeviceInfo().isLandscape
     val artworkSize = songListCoverSize(compactRows)
+    val highlightTitle = showArtwork && isCurrentTrack && track.supportsNeteaseSongActions
     if (!compactRows && showArtwork && selected == null) {
         PortraitMediaRow(
             image = track.coverUrl.smallImage(), title = track.title,
@@ -92,6 +94,7 @@ internal fun DetailTrackRow(
             onClick = onClick, modifier = Modifier, album = null, suffix = null,
             suffixColor = null, favorite = isFavorite, showDivider = false,
             onMore = onMoreClick, navigationArrow = false, footer = null,
+            isCurrentTrack = highlightTitle,
         )
         return
     }
@@ -184,7 +187,7 @@ internal fun DetailTrackRow(
             ) {
                 Text(
                     text = track.title,
-                    color = colors.content,
+                    color = if (highlightTitle) colors.accent else colors.content,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = if (compactRows) 16.sp else 15.sp,
                         lineHeight = if (compactRows) 22.sp else 20.sp,
