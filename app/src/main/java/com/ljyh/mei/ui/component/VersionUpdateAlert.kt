@@ -48,7 +48,7 @@ fun VersionUpdateAlert(
                         onClick = {
                             onDismiss()
                             runCatching {
-                                if (result.isBeta) {
+                                if (result.requiresLogin) {
                                     Toast.makeText(
                                         context,
                                         R.string.about_beta_download_login_required,

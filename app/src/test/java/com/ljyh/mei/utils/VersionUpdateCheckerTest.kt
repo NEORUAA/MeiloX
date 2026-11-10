@@ -295,6 +295,7 @@ class VersionUpdateCheckerTest {
             result.releaseUrl,
         )
         assertTrue(result.isBeta)
+        assertFalse(result.requiresLogin)
     }
 
     @Test

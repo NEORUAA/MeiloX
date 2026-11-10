@@ -23,6 +23,7 @@ sealed interface VersionUpdateResult {
         val latestTag: String,
         val releaseUrl: String,
         val isBeta: Boolean = false,
+        val requiresLogin: Boolean = false,
         val currentBuildLabel: String? = null,
         val comparisonKnown: Boolean = true,
     ) : VersionUpdateResult
@@ -206,6 +207,7 @@ object VersionUpdateChecker {
                     latestTag = latestBuild.label,
                     releaseUrl = "$RepositoryUrl/actions/runs/${run.id}#artifacts",
                     isBeta = true,
+                    requiresLogin = true,
                     currentBuildLabel = currentCiBuild?.label ?: installedBuild.label,
                     comparisonKnown = comparison == BuildComparison.UpdateAvailable,
                 )
