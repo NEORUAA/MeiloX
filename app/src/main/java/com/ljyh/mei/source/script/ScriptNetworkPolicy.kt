@@ -161,7 +161,6 @@ class ScriptNetworkPolicy(
             if (response.code in setOf(404, 410)) SourceErrorCode.NOT_FOUND else SourceErrorCode.NETWORK,
         )
         val body = response.body ?: invalidResponse()
-        if (body.contentLength() > MAX_ARTWORK_BYTES) throw SourceResponseSizeException()
         ensureCurrent()
         val parent = file.parentFile ?: invalidResponse()
         java.nio.file.Files.createDirectories(parent.toPath())
@@ -170,13 +169,10 @@ class ScriptNetworkPolicy(
             body.byteStream().use { input ->
                 temporary.outputStream().use { output ->
                     val buffer = ByteArray(65_536)
-                    var written = 0L
                     while (true) {
                         ensureCurrent()
                         val count = input.read(buffer)
                         if (count < 0) break
-                        written += count
-                        if (written > MAX_ARTWORK_BYTES) throw SourceResponseSizeException()
                         output.write(buffer, 0, count)
                     }
                 }
@@ -190,7 +186,7 @@ class ScriptNetworkPolicy(
         var bytesRemaining = cached.sumOf { it.length() }
         var countRemaining = cached.size
         cached.filter { it != file }.forEach { old ->
-            if (bytesRemaining > MAX_ARTWORK_BYTES || countRemaining > 256) {
+            if (bytesRemaining > MAX_ARTWORK_CACHE_BYTES || countRemaining > 256) {
                 val size = old.length()
                 if (old.delete()) { bytesRemaining -= size; countRemaining-- }
             }
@@ -338,7 +334,7 @@ class ScriptNetworkPolicy(
 
         const val MAX_REQUEST_BYTES = 256 * 1024
         const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-        internal const val MAX_ARTWORK_BYTES = 16L * 1024 * 1024
+        internal const val MAX_ARTWORK_CACHE_BYTES = 128L * 1024 * 1024
         internal const val API_CONCURRENCY = 4
         internal const val ARTWORK_CONCURRENCY = 2
         internal const val AUDIO_CONCURRENCY = 2

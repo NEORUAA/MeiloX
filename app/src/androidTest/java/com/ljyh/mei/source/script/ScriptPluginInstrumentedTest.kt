@@ -6,6 +6,7 @@ import com.ljyh.mei.utils.dataStore
 import kotlinx.coroutines.flow.first
 import androidx.media3.datasource.DataSpec
 import androidx.test.platform.app.InstrumentationRegistry
+import coil3.imageLoader
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.source.core.PlaybackResolver
 import com.ljyh.mei.source.core.ProviderRegistry
@@ -591,18 +592,24 @@ class ScriptPluginInstrumentedTest {
     fun explicitlyEnabledLargeArtworkDownloadsAndDecodesThroughTheHostImagePath() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("sourceArtworkLive") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(context.cacheDir, "source-large-artwork-${java.util.UUID.randomUUID()}").apply { mkdirs() }
-        val url = "https://p1.music.126.net/4kwTBUvkMC7VfWhbzy8DBw==/109951173516046564.jpg"
-        try {
-            val policy = ScriptNetworkPolicy(listOf("p1.music.126.net"))
-            val uri = policy.artwork(url, directory)
-            val file = File(java.net.URI(uri))
-            assertTrue("The reported cover exceeds the JSON response limit", file.length() > 1_048_576L)
-            val bitmap = android.graphics.BitmapFactory.decodeFile(file.path)
-            assertNotNull("The downloaded source artwork must decode on Android", bitmap)
-            checkNotNull(bitmap).recycle()
-            assertEquals("The second load must reuse the cached file", uri, policy.artwork(url, directory))
-        } finally { directory.deleteRecursively() }
+        val router = dagger.hilt.android.EntryPointAccessors.fromApplication(context,
+            com.ljyh.mei.playback.DownloadSourceEntryPoint::class.java).sourceRouter()
+        withTimeout(20_000) { router.registry.awaitInitialized() }
+        val source = router.registry.requireProvider(ProviderIds.NETEASE) as ScriptMusicProvider
+        val revision = source.accountRevision.value
+        val track = checkNotNull(source.getTrack(TrackRef(source.id, "3451609995")))
+        assertTrue("The installed source must return a host-owned cover", SourceArtworkRegistry.owns(track.artworkUrl))
+        val uri = SourceArtworkRegistry.resolve(track.artworkUrl)
+        val file = File(java.net.URI(uri))
+        assertTrue("The reported original cover exceeds the former 16 MiB limit", file.length() > 16L * 1024 * 1024)
+        val request = coil3.request.ImageRequest.Builder(context).data(track.artworkUrl).size(512).build()
+        val result = context.imageLoader.execute(request)
+        assertTrue("The player/notification image pipeline must decode the cover: $result", result is coil3.request.SuccessResult)
+        assertEquals("The second load must reuse the cached file", uri, SourceArtworkRegistry.resolve(track.artworkUrl))
+        assertEquals(revision, source.accountRevision.value)
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+            putString("stream", "Track 3451609995 artwork bytes=${file.length()} decoded=${result.image?.width}x${result.image?.height}\n")
+        })
     }
 
     @Test

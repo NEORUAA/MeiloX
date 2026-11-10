@@ -642,7 +642,8 @@ class ScriptPluginPolicyTest {
         val policy = ScriptNetworkPolicy(listOf("cdn.example"))
         val url = "https://cdn.example/large-cover.jpg"
         val file = ScriptNetworkPolicy.artworkFile(url, directory)
-        val bytes = ByteArray(1_128_119) { (it % 251).toByte() }
+        // NetEase track 3451609995 has a 19,661,282-byte original cover.
+        val bytes = ByteArray(19_661_282) { (it % 251).toByte() }
         try {
             for (length in listOf(bytes.size.toLong(), -1L)) {
                 var largestRead = 0L
