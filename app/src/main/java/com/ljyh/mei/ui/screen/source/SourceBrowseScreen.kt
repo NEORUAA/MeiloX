@@ -885,8 +885,7 @@ fun SourceLibraryScreen(
                     viewModel, SourceContentRequest.Library(collection), ownState, playingLikedTrack, listState,
                     // Search, play actions, divider, and the optional title and page tabs.
                     leadingItems = 3 + (if (landscape) 0 else 1) + (if (category == null) 1 else 0),
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        .padding(end = 20.dp, bottom = bottom + 16.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd),
                 )
             }
         }

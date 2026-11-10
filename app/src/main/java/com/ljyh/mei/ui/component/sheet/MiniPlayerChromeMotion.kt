@@ -13,6 +13,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.geometry.Rect
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -134,6 +136,9 @@ internal class MiniPlayerChromeMotion(compact: Boolean) {
 }
 
 internal val LocalMiniPlayerChromeMotion = staticCompositionLocalOf<MiniPlayerChromeMotion?> { null }
+
+internal val LocalMiniPlayerVerticalOffset = staticCompositionLocalOf<() -> Dp> { { 0.dp } }
+internal val LocalMiniPlayerSearchBounds = staticCompositionLocalOf<Rect?> { null }
 
 internal data class MiniPlayerChromeHint(
     val progress: State<Float>,

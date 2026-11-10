@@ -144,10 +144,13 @@ import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationLayout
 import io.github.neoruaa.glasmio.scaffold.glasmioAdaptiveContent
 import io.github.neoruaa.glasmio.scaffold.rememberGlasmioAdaptiveNavigationState
 import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationOperation
+import io.github.neoruaa.glasmio.scaffold.GlasmioNavigationPhase
 import com.ljyh.mei.ui.navigation.MeiloXPageHeaders
 import com.ljyh.mei.ui.navigation.MeiloXPageEntry
 import com.ljyh.mei.ui.navigation.rememberMeiloXNavigationScrollState
 import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeMotion
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerSearchBounds
+import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerVerticalOffset
 import com.ljyh.mei.ui.component.sheet.LocalMiniPlayerChromeHint
 import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeHint
 import com.ljyh.mei.ui.component.sheet.MiniPlayerChromeMotion
@@ -264,6 +267,9 @@ import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.account.NeteaseLegacyWebSessionNotice
 import com.ljyh.mei.ui.screen.navigationEntry
 import com.ljyh.mei.ui.screen.search.SearchScreen
+import com.ljyh.mei.ui.screen.playlist.component.LocalPlaylistLocateHost
+import com.ljyh.mei.ui.screen.playlist.component.PlaylistLocateChromeLayer
+import com.ljyh.mei.ui.screen.playlist.component.PlaylistLocateHostState
 import com.ljyh.mei.ui.navigation.MeiNavEntryViewModelStoreOwner
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiRoute
@@ -650,6 +656,7 @@ class MainActivity : ComponentActivity() {
                             }
                     ) {
                     val isLandscape = rememberDeviceInfo().isLandscape
+                    val playlistLocateHost = remember { PlaylistLocateHostState() }
                     val miniPlayerHeight = if (isLandscape) LandscapeMiniPlayerHeight else MiniPlayerHeight
                     val focusManager = LocalFocusManager.current
                     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1087,6 +1094,14 @@ class MainActivity : ComponentActivity() {
                                 hint = miniPlayerHint,
                                 centerTravel = miniPlayerCenterTravel,
                                 searchVerticalOffset = searchMiniPlayerOffset,
+                                searchBounds = adaptiveNavigation.tabBarBounds.value,
+                                locatorBottomPadding = {
+                                    val miniAnchor = if (playerBottomSheetState.progress == 0f &&
+                                        !playerBottomSheetState.isDragging
+                                    ) playerBottomSheetState.value else playerBottomSheetState.collapsedBound
+                                    miniAnchor + NavigationBarBottomMargin
+                                },
+                                playlistLocateHost = playlistLocateHost,
                                 state = playerBottomSheetState,
                                 backdrop = bottomControlsBackdrop,
                                 pageDarkAppearance = pageDarkAppearance,
@@ -1169,6 +1184,13 @@ class MainActivity : ComponentActivity() {
                                             else if (pop) GlasmioNavigationOperation.Pop
                                             else GlasmioNavigationOperation.Push
                                         }
+                                    }
+                                    val headerFrame = headerMotion.frame.value
+                                    SideEffect {
+                                        // Start the locator's exit with the shared header
+                                        // transition, before the outgoing page is disposed.
+                                        playlistLocateHost.navigationVisible =
+                                            headerFrame.phase == GlasmioNavigationPhase.Idle
                                     }
                                     LaunchedEffect(pageHeaders, headerMotion, backStack) {
                                         snapshotFlow {
@@ -1337,6 +1359,15 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }) else null,
                                     ) {
+                                        CompositionLocalProvider(
+                                            LocalMiniPlayerChromeMotion provides miniPlayerChromeMotion,
+                                            LocalMiniPlayerSearchBounds provides adaptiveNavigation.tabBarBounds.value,
+                                            LocalMiniPlayerVerticalOffset provides {
+                                                miniPlayerCenterTravel * miniPlayerChromeMotion.verticalProgress.value +
+                                                    searchMiniPlayerOffset()
+                                            },
+                                            LocalPlaylistLocateHost provides playlistLocateHost,
+                                        ) {
                                         GlasmioNavDisplay(
                                             sceneState = sceneState,
                                             motion = headerMotion,
@@ -1382,6 +1413,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                         )
+                                        }
                                         AnimatedVisibility(
                                             visible = active,
                                             enter = fadeIn(),
@@ -1495,6 +1527,7 @@ class MainActivity : ComponentActivity() {
                                 backdrop = bottomControlsBackdrop,
                                 playerBottomSheetState = playerBottomSheetState,
                                 bottomMargin = navigationBottomMargin,
+                                onSearchBoundsChanged = { adaptiveNavigation.tabBarBounds.value = it },
                             )
                         }
                         selectionToolbar.content.value?.let { toolbar ->
@@ -1657,6 +1690,9 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
     hint: MiniPlayerChromeHint,
     centerTravel: Dp,
     searchVerticalOffset: () -> Dp,
+    searchBounds: androidx.compose.ui.geometry.Rect?,
+    locatorBottomPadding: () -> Dp,
+    playlistLocateHost: PlaylistLocateHostState,
     state: GlasmioBottomSheetState,
     backdrop: Backdrop,
     pageDarkAppearance: Boolean?,
@@ -1666,6 +1702,19 @@ private fun BoxScope.AnimatedMiniPlayerLayer(
         {
             centerTravel * motion.verticalProgress.value +
                 searchVerticalOffset()
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(0.9f),
+    ) {
+        CompositionLocalProvider(
+            LocalGlassBackdrop provides backdrop,
+            LocalMiniPlayerSearchBounds provides searchBounds,
+            LocalMiniPlayerVerticalOffset provides miniPlayerVerticalOffset,
+        ) {
+            PlaylistLocateChromeLayer(playlistLocateHost, locatorBottomPadding)
         }
     }
     Box(
@@ -1704,6 +1753,7 @@ private fun AnimatedBottomNavigationRow(
     backdrop: Backdrop,
     playerBottomSheetState: GlasmioBottomSheetState,
     bottomMargin: Dp,
+    onSearchBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     GlasmioNavigationBarWithTrailingItem(
         items = items,
@@ -1713,6 +1763,7 @@ private fun AnimatedBottomNavigationRow(
         onSelected = { item -> if (item == Index.Search) onSearchClick() else onSelected(item) },
         compactProgress = compactProgress,
         backdrop = backdrop,
+        onItemBoundsChanged = { key, bounds -> if (key == Index.Search) onSearchBoundsChanged(bounds) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = bottomNavigationHorizontalMargin)

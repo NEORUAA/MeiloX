@@ -448,8 +448,7 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
                     SourceTrackLocateButton(
                         viewModel, SourceContentRequest.Detail(ref), state, track, listState,
                         leadingItems = 1, // Both layouts reserve a slot for the playlist hero.
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                            .padding(end = 20.dp, bottom = bottomPadding + 16.dp),
+                        modifier = Modifier.align(Alignment.BottomEnd),
                     )
                 }
                 SourceTrackActions(menu, { menu = null }, viewModel, playlist = playlist)
