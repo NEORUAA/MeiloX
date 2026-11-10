@@ -67,6 +67,7 @@ internal class PlaylistLocateRegistration(
     var visible by mutableStateOf(true)
     var locating by mutableStateOf(false)
     var resolveIndex: suspend () -> Int? = { null }
+    val shouldShow: Boolean get() = (available && visible) || locating
 }
 
 internal class PlaylistLocateHostState {
@@ -123,7 +124,7 @@ internal fun PlaylistLocateButton(
         onDispose { host?.unregister(owner, registration) }
     }
 
-    LaunchedEffect(listState, available) {
+    LaunchedEffect(registration, available) {
         if (!available) return@LaunchedEffect
         registration.visible = true
         snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
@@ -192,7 +193,7 @@ private fun PlaylistLocateButtonChrome(
     var buttonBounds by remember(registration) { mutableStateOf<Rect?>(null) }
 
     AnimatedVisibility(
-        visible = navigationVisible && ((registration.available && registration.visible) || registration.locating),
+        visible = navigationVisible && registration.shouldShow,
         enter = EnterTransition.None,
         exit = ExitTransition.None,
         modifier = modifier

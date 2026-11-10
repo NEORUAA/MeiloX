@@ -200,7 +200,7 @@ fun MeiloXPinnedPage(
     val trailingActions = actions()
     val locatorHost = LocalPlaylistLocateHost.current
     val locatorRegistration = locatorHost?.registrationFor(LocalPlaylistLocateOwner.current)
-    val locatorAction = if (isLandscape && locatorRegistration != null) {
+    val locatorAction = if (isLandscape && locatorRegistration?.shouldShow == true) {
             meiloxHeaderAction(
                 key = "playlist-locate",
                 contentDescription = stringResource(R.string.playlist_locate_current_track),
