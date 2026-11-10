@@ -27,8 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,6 +75,8 @@ fun ClassicImmersiveLayout(
     var rowCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val windowHeightPx = with(density) { maxHeight.toPx() }
         val layoutDirection = LocalLayoutDirection.current
         // Transient system bars overlay the player without changing its geometry.
         val safePadding = WindowInsets.displayCutout.asPaddingValues()
@@ -152,11 +157,21 @@ fun ClassicImmersiveLayout(
                         .fillMaxWidth()
                         .padding(start = metadataInset, end = contentEndInset)
                     val onTitleClick = {
+                        val headerBounds = rowCoordinates?.takeIf { it.isAttached }?.boundsInWindow()
+                        val menuViewport = headerBounds?.let { bounds ->
+                            Rect(
+                                left = bounds.left,
+                                top = 0f,
+                                right = bounds.right,
+                                bottom = windowHeightPx,
+                            )
+                        }
                         overlayHandler.showAlbumArtist(
                             metadata.album,
                             metadata.artists,
                             metadata.coverUrl,
                             anchorBounds = playerMetadataAnchorBounds(textCoordinates, rowCoordinates),
+                            viewportBounds = menuViewport,
                         )
                     }
                     if (playerStyle == PlayerStyle.AppleMusic) {

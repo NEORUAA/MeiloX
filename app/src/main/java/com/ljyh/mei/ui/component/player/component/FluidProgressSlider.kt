@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -56,11 +57,12 @@ fun FluidProgressSlider(
     modifier: Modifier = Modifier,
     onTrackTopChanged: ((Float) -> Unit)? = null,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
+    viewportBounds: Rect? = null,
 ) {
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     if (playerStyle == PlayerStyle.AppleMusic) {
         AppleMusicProgressSlider(position, duration, onPositionChange, modifier, onTrackTopChanged,
-            onQualityMenuVisibilityChanged)
+            onQualityMenuVisibilityChanged, viewportBounds)
         return
     }
     val playerConnection = LocalPlayerConnection.current
@@ -239,6 +241,7 @@ fun FluidProgressSlider(
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 onLocalSourceSelected = { playerConnection?.useLocalSource() },
                 onMenuVisibilityChanged = onQualityMenuVisibilityChanged,
+                viewportBounds = viewportBounds,
                 style = commonTextStyle.copy(fontSize = 10.sp),
                 color = Color.White.copy(alpha = 0.6f),
             )

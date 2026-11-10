@@ -19,6 +19,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
@@ -88,6 +89,7 @@ fun PlayerQualityDropdown(
     backgroundColor: Color = Color.White.copy(alpha = 0.15f),
     cornerRadius: Dp = 6.dp,
     onMenuVisibilityChanged: (Boolean) -> Unit = {},
+    viewportBounds: Rect? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val menuVisibilityChanged by rememberUpdatedState(onMenuVisibilityChanged)
@@ -131,13 +133,17 @@ fun PlayerQualityDropdown(
         onClosed = { menuVisibilityChanged(false) },
         itemCount = availableQualities.size + (if (localPlaybackInfo != null) 1 else 0) +
             (if (statusTitle != null) 1 else 0),
-        modifier = modifier.background(backgroundColor, ContinuousRoundedRectangle(cornerRadius)),
+        modifier = modifier,
         fullScreen = true,
         centerHorizontally = true,
         expandFromAnchor = Alignment.CenterHorizontally,
+        viewportBounds = viewportBounds,
         anchor = { onClick ->
             Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp).clickable(
+                modifier = Modifier
+                    .background(backgroundColor, ContinuousRoundedRectangle(cornerRadius))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .clickable(
                     interactionSource = null,
                     indication = null,
                     role = Role.Button,

@@ -170,7 +170,8 @@ fun ClassicTabletLayout(
             safePadding.calculateEndPadding(layoutDirection),
             lyricStart + footerHeight + 24.dp - maxHeight,
         ).coerceAtMost(lyricStart / 2)
-        val tabletHandleTopInset = AppleMusicDimensions.handleTopInset + 24.dp
+        val tabletHandleTopInset = AppleMusicDimensions.handleTopInset
+        val tabletQueueTopInset = tabletHandleTopInset + 24.dp
         val paneWidth = if (appleMusicStyle) {
             (lyricStart - tabletMargin * 2).coerceAtLeast(0.dp)
         } else ((maxWidth - 96.dp) / 2).coerceAtLeast(0.dp)
@@ -327,6 +328,7 @@ fun ClassicTabletLayout(
                             isPlaying = isPlaying,
                             playerConnection = stateContainer.playerConnection,
                             horizontalPadding = 0.dp,
+                            viewportBounds = controlPaneBounds,
                         )
                     } else if (progressBarStyle == ProgressBarStyle.LINEAR) {
                         FluidProgressSlider(
@@ -335,6 +337,7 @@ fun ClassicTabletLayout(
                             onPositionChange = { newPosition ->
                                 stateContainer.playerConnection.player.seekTo(newPosition)
                             },
+                            viewportBounds = controlPaneBounds,
                             modifier = Modifier
                                 .fillMaxWidth(0.7f)
                                 .padding(horizontal = PlayerHorizontalPadding + 8.dp)
@@ -347,6 +350,7 @@ fun ClassicTabletLayout(
                             onPositionChange = { newPosition ->
                                 stateContainer.playerConnection.player.seekTo(newPosition)
                             },
+                            viewportBounds = controlPaneBounds,
                             modifier = Modifier
                                 .fillMaxWidth(0.7f)
                                 .padding(horizontal = PlayerHorizontalPadding + 8.dp)
@@ -466,7 +470,7 @@ fun ClassicTabletLayout(
                     val actionEnd = maxOf(40.dp, safePadding.calculateEndPadding(layoutDirection))
                     val actionBottom = maxOf(24.dp, safePadding.calculateBottomPadding())
                     val queueTop = safePadding.calculateTopPadding() +
-                        tabletHandleTopInset + AppleMusicDimensions.handleHeight + 24.dp
+                        tabletQueueTopInset + AppleMusicDimensions.handleHeight + 24.dp
                     val queueBottom = actionBottom + 42.dp
                     // Retain measured pages across hide/show instead of rebuilding them on entry.
                     val detailTransition = updateTransition(showAppleMusicDetail, label = "tabletDetailVisibility")

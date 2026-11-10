@@ -18,6 +18,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.ljyh.mei.constants.MiniPlayerHeight
 import com.ljyh.mei.constants.PlayerStyle
@@ -107,6 +108,7 @@ fun ClassicPlayer(
         modifier = modifier,
         collapsedDragOffset = miniPlayerVerticalOffset,
         collapsedDragHeight = if (device.isLandscape) com.ljyh.mei.constants.LandscapeMiniPlayerHeight else MiniPlayerHeight,
+        topDragHeight = if (device.isTablet && device.isLandscape) 96.dp else 0.dp,
         transitionBackdrop = collapsedBackdrop,
         onDismiss = {
             stateContainer.playerConnection.player.stop()

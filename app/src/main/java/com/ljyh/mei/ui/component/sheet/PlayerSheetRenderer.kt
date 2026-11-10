@@ -585,6 +585,7 @@ fun BottomSheet(
     modifier: Modifier = Modifier,
     collapsedDragOffset: () -> Dp = { 0.dp },
     collapsedDragHeight: Dp = 0.dp,
+    topDragHeight: Dp = 0.dp,
     transitionBackdrop: Backdrop,
     onDismiss: (() -> Unit)? = null,
     onHorizontalSwipe: ((HorizontalSwipeDirection) -> Unit)? = null,
@@ -678,6 +679,16 @@ fun BottomSheet(
                     content = content,
                 )
             }
+        }
+        if (expanded && topDragHeight > 0.dp) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(topDragHeight)
+                    .sheetGestures(state, layers, onHorizontalSwipe)
+                    .clearAndSetSemantics { },
+            )
         }
         if (active && transitionGeometryReady) {
             Canvas(

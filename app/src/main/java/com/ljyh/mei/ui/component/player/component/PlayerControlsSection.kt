@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.LayerOutsets
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
@@ -51,6 +52,7 @@ fun PlayerControlsSection(
     controlSpacing: Dp? = null,
     onProgressTrackTopChanged: ((Float) -> Unit)? = null,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
+    viewportBounds: Rect? = null,
 ) {
     val isFM = playerConnection.isFMMode.collectAsStateWithLifecycle()
     val playerStyle = rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic).value
@@ -64,7 +66,7 @@ fun PlayerControlsSection(
         modifier = Modifier.fillMaxWidth()
     ) {
         PlayerProgressSection(position, duration, isPlaying, playerConnection, onProgressTrackTopChanged,
-            onQualityMenuVisibilityChanged)
+            onQualityMenuVisibilityChanged, viewportBounds = viewportBounds)
 
         Spacer(Modifier.height(spacerHeight))
 
@@ -116,6 +118,7 @@ internal fun PlayerProgressSection(
     onProgressTrackTopChanged: ((Float) -> Unit)? = null,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
     horizontalPadding: Dp? = null,
+    viewportBounds: Rect? = null,
 ) {
     // Read the ticking position here so only progress recomposes, leaving the
     // title, sheet and glass playback controls outside this update boundary.
@@ -145,9 +148,10 @@ internal fun PlayerProgressSection(
     val seek: (Long) -> Unit = { playerConnection.player.seekTo(it) }
     if (progressBarStyle == ProgressBarStyle.LINEAR) {
         FluidProgressSlider(currentPosition, currentDuration, seek, modifier, onProgressTrackTopChanged,
-            onQualityMenuVisibilityChanged)
+            onQualityMenuVisibilityChanged, viewportBounds = viewportBounds)
     } else {
         PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier,
-            onQualityMenuVisibilityChanged, onTrackTopChanged = onProgressTrackTopChanged)
+            onQualityMenuVisibilityChanged, onTrackTopChanged = onProgressTrackTopChanged,
+            viewportBounds = viewportBounds)
     }
 }

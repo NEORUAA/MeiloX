@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -70,6 +71,7 @@ fun PlayerProgressSlider(
     modifier: Modifier = Modifier,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
     onTrackTopChanged: ((Float) -> Unit)? = null,
+    viewportBounds: Rect? = null,
 ) {
     val playerConnection = LocalPlayerConnection.current
     val qualityMediaId = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value?.trackRef
@@ -283,6 +285,7 @@ fun PlayerProgressSlider(
                 onQualitySelected = { playerConnection?.changeQuality(it) },
                 onLocalSourceSelected = { playerConnection?.useLocalSource() },
                 onMenuVisibilityChanged = onQualityMenuVisibilityChanged,
+                viewportBounds = viewportBounds,
                 style = timeTextStyle,
                 color = Color.White.copy(alpha = 0.8f),
             )
