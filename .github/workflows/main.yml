@@ -23,11 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Checkout pinned Glasmio source
+      - name: Checkout latest Glasmio source
         uses: actions/checkout@v4
         with:
           repository: NEORUAA/Glasmio
-          ref: 3366069233454bee74588e983208276983d9ed41
           path: .glasmio-ci
           persist-credentials: false
 
@@ -149,4 +148,62 @@ jobs:
           name: ${{ needs.build.outputs.release_name }}
           prerelease: ${{ contains(needs.build.outputs.tag_name, '-') }}
           tag: ${{ needs.build.outputs.tag_name }}
+          token: ${{ github.token }}
+
+  prerelease:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: meilox-rolling-prerelease
+      cancel-in-progress: true
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed APK
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: prerelease-artifact
+          skip-decompress: true
+
+      - name: Remove previous prereleases and tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRE_RELEASE_TAG: prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prerelease_tags="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.prerelease == true) | .tag_name'
+          )"
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            gh release delete "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --yes \
+              --cleanup-tag || true
+          done <<< "$prerelease_tags"
+
+          # A previous run may have left the fixed tag without a release.
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/${PRE_RELEASE_TAG}" || true
+
+      - name: Publish rolling prerelease
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: prerelease-artifact/${{ needs.build.outputs.artifact_name }}
+          artifactContentType: application/vnd.android.package-archive
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          commit: ${{ github.sha }}
+          generateReleaseNotes: false
+          makeLatest: false
+          name: MeiloX Prerelease
+          prerelease: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          tag: prerelease
           token: ${{ github.token }}

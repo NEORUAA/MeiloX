@@ -46,11 +46,10 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的多音源�
 
 ## Build from source
 
-Use JDK 21 and Android SDK 37.0. Build with the Glasmio development revision pinned in CI:
+Use JDK 21 and Android SDK 37.0. Build with the latest Glasmio development source:
 
 ```sh
 git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-git -C ../Glasmio checkout 3366069233454bee74588e983208276983d9ed41
 ./gradlew -Pglasmio.source=true :app:assembleDebug
 ```
 
