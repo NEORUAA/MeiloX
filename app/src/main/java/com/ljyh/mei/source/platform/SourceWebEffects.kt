@@ -184,12 +184,18 @@ internal class SourceWebRecipe(
     val bridgeAliases: Map<String, String>,
     val mappings: List<SourceWebUrlMapping>,
 ) {
-    fun checkedUrl(value: String, base: String? = null): String {
+    fun checkedUrl(value: String, base: String? = null): String = checkedResolvedUrl(value, base, requireGrantedHost = true)
+
+    fun checkedRedirectUrl(value: String, base: String? = null): String =
+        checkedResolvedUrl(value, base, requireGrantedHost = false)
+
+    private fun checkedResolvedUrl(value: String, base: String?, requireGrantedHost: Boolean): String {
         if (value.length > 8192 || value.any { it == '\u0000' || it == '\r' || it == '\n' }) denied()
         val uri = runCatching { if (base == null) URI(value) else URI(base).resolve(value) }.getOrElse { denied() }
         val host = uri.host ?: denied()
-        if (uri.scheme != "https" || !ScriptNetworkPolicy.isHostAllowed(host, domains) ||
-            uri.rawUserInfo != null || uri.port !in setOf(-1, 443)) denied()
+        if (uri.rawUserInfo != null || requireGrantedHost && (uri.scheme != "https" || uri.port !in setOf(-1, 443)) ||
+            !requireGrantedHost && uri.scheme !in setOf("http", "https")) denied()
+        if (requireGrantedHost && !ScriptNetworkPolicy.isHostAllowed(host, domains)) denied()
         return uri.toASCIIString()
     }
 

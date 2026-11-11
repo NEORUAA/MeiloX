@@ -1235,7 +1235,7 @@ class ScriptPluginPolicyTest {
     }
 
     @Test
-    fun binaryResponsesPreserveRawBytesAndKeepTheSameEncodingAndSizeRestrictions() {
+    fun binaryResponsesPreserveRawBytesAndKeepEncodingAndSizeRestrictions() {
         val policy = ScriptNetworkPolicy(listOf("api.example.com"))
         assertEquals("utf8", policy.responseEncoding(json("{}")))
         assertEquals("base64", policy.responseEncoding(json("""{"responseEncoding":"base64"}""")))
@@ -1267,9 +1267,9 @@ class ScriptPluginPolicyTest {
             }
         }
         response(binary, code = 302).use { response ->
-            assertEquals(SourceErrorCode.NETWORK, assertThrows(SourceException::class.java) {
-                policy.responsePayload(response, "base64")
-            }.code)
+            val payload = policy.responsePayload(response, "base64")
+            assertEquals(302, payload["status"].asInt)
+            assertArrayEquals(binary, Base64.getDecoder().decode(payload["bodyBase64"].asString))
         }
     }
 

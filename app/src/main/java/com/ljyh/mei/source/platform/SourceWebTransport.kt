@@ -186,7 +186,7 @@ internal class SourceWebTransport(
         val response = exchange(request.url.toString(), request.method, request.requestHeaders, null, MAX_RESOURCE_BYTES,
             referer = referer)
         if (request.isForMainFrame && response.url.substringBefore('#') != request.url.toString().substringBefore('#')) {
-            navigate(page.recipe.checkedPageUrl(response.url))
+            navigate(page.recipe.checkedRedirectUrl(response.url))
             return WebResourceResponse("text/plain", "UTF-8", 204, "No Content", emptyMap(), ByteArrayInputStream(byteArrayOf()))
         }
         val headers = response.headers.toMutableMap()
@@ -268,10 +268,12 @@ internal class SourceWebTransport(
             var target = page.recipe.checkedUrl(initialUrl)
             var currentMethod = method
             var currentBody = body
-            var currentReferer = referer?.let { runCatching { page.recipe.checkedUrl(it) }.getOrNull() }
-            repeat(6) { hop ->
+            var currentReferer = referer?.let { runCatching { page.recipe.checkedRedirectUrl(it) }.getOrNull() }
+            var initialHop = true
+            while (true) {
                 ensureCurrent()
-                val checked = policy.validateUrl(target.substringBefore('#'))
+                val checked = if (initialHop) policy.validateUrl(target.substringBefore('#'))
+                else policy.validateRedirectUrl(target.substringBefore('#'))
                 val sameOrigin = origin == null || originOf(origin) == originOf(target)
                 val useCookies = credentials == "include" || credentials == "same-origin" && sameOrigin
                 val builder = Request.Builder().url(checked)
@@ -305,10 +307,9 @@ internal class SourceWebTransport(
                             runBlocking { setCookie(target, value, requireAccepted = false) }
                         }
                         if (response.code in 300..399) {
-                            if (hop == 5) denied()
-                            val next = page.recipe.checkedUrl(response.header("Location") ?: denied(), target)
+                            val next = page.recipe.checkedRedirectUrl(response.header("Location") ?: denied(), target)
+                            initialHop = false
                             val becomesGet = response.code == 303 || response.code in setOf(301, 302) && currentMethod == "POST"
-                            if (fileUpload && currentBody != null && !becomesGet && originOf(next) != originOf(target)) denied()
                             currentReferer = currentReferer ?: target
                             target = next
                             if (becomesGet) {

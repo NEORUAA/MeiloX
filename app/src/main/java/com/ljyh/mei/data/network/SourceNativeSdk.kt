@@ -101,18 +101,17 @@ internal object SourceNativeSdk {
             File(directory, "security.preferences_pb")
         }
         private val client = OkHttpClient.Builder()
-            .proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
+            .proxy(java.net.Proxy.NO_PROXY)
             .retryOnConnectionFailure(false).connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS)
             .dns(Dns { host ->
-                if (host !in setOf("ac.dun.163yun.com", "ac.dun.163.com")) denied()
                 NeteaseSecurityDns.lookup(host).also { if (it.isEmpty() || it.any { address -> !ScriptNetworkPolicy.isPublicAddress(address) }) denied() }
             }).addInterceptor { chain ->
                 val request = chain.request()
-                if (request.url.scheme != "https" || request.url.port != 443 || request.url.username.isNotEmpty() || request.url.password.isNotEmpty()) denied()
+                if (request.url.username.isNotEmpty() || request.url.password.isNotEmpty()) denied()
                 if ((request.body?.contentLength() ?: 0) > 262_144) denied()
                 chain.proceed(request).also { response ->
-                    if (response.code in 300..399 || response.body?.source()?.request(1_048_577) == true) { response.close(); denied() }
+                    if (response.body?.source()?.request(1_048_577) == true) { response.close(); denied() }
                 }
             }.build()
         val localId = File(directory, "installation-id").let { file ->

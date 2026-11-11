@@ -204,7 +204,7 @@ class SourcePlatformEffects @Inject constructor(
                         try {
                             val result = response.use {
                                 if (!scope.isActive || !continuation.isActive) throw CancellationException("Source upload ended")
-                                if (it.code in 300..399 || it.body?.source()?.request(65_537) == true) platformDenied()
+                                if (it.body?.source()?.request(65_537) == true) platformDenied()
                                 val body = it.body?.string().orEmpty()
                                 if (!scope.isActive || !continuation.isActive) throw CancellationException("Source upload ended")
                                 JsonObject().apply { addProperty("status", it.code); addProperty("body", body) }

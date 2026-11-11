@@ -35,7 +35,6 @@ class LyricRepository @Inject constructor(qqApi: QQMusicUApiService) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS)
-        .followRedirects(false).followSslRedirects(false)
         .build()
     private val gson = Gson()
     private val matches = LinkedHashMap<TrackRef, Pair<Track, String?>>()
