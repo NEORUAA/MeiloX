@@ -3,7 +3,13 @@ package com.ljyh.mei.ui.component.sheet
 import io.github.neoruaa.glasmio.scaffold.GlasmioBottomSheetState
 import io.github.neoruaa.glasmio.scaffold.dismissedAnchor
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
@@ -17,12 +23,7 @@ internal const val PlayerMiniContentFadeEnd = 0.8f
 internal const val PlayerPressHighlightFadeEnd = PlayerBackgroundHandoffEnd
 internal const val PlayerContentAppearStart = 0.3f
 internal const val PlayerContentAppearEnd = 0.9f
-private const val PlayerCollapseTranslationEnd = 0.3f
-private const val PlayerCollapseReturnStart = 0.8f
-private const val PlayerCollapseTopReturnStart =
-    (PlayerCollapseReturnStart - PlayerCollapseTranslationEnd) / (1f - PlayerCollapseTranslationEnd)
-private const val PlayerCollapsePortraitTopOvershootFraction = 1f / 4f
-private const val PlayerCollapseLandscapeTopOvershootFraction = 1f / 8f
+internal const val PlayerReleasePositionDamping = 0.9f
 
 internal fun playerSheetSpring() = spring<Dp>(
     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -49,31 +50,69 @@ internal fun playerContentAlpha(progress: Float) = easeInCubic(
     (progress - PlayerContentAppearStart) / (PlayerContentAppearEnd - PlayerContentAppearStart),
 )
 
-internal data class PlayerCollapseFrame(
-    val morphProgress: Float,
-    val offsetY: Float,
-    // Pixels per unit of closing morph progress, matching the preceding rigid translation.
-    val topStartTangent: Float = 0f,
+/** Keep the page rigid until the user releases the drag. */
+internal fun playerClosingDragFrame(host: Rect, progress: Float, travel: Float) = PlayerSheetMotionFrame(
+    host.translate(Offset(0f, (1f - progress.coerceIn(0f, 1f)) * travel)), 1f,
 )
 
-/** Use 30% of closing progress for rigid translation, then morph from one third-screen down. */
-internal fun playerCollapseFrame(
-    progress: Float,
-    hostHeight: Float,
-    anchorTravel: Float,
-    closing: Boolean,
-): PlayerCollapseFrame {
-    val p = progress.coerceIn(0f, 1f)
-    if (!closing || hostHeight <= 0f || anchorTravel <= 0f) return PlayerCollapseFrame(p, 0f)
-    val rigidDistance = hostHeight / 3f
-    val morphStart = 1f - PlayerCollapseTranslationEnd
-    val topStartTangent = rigidDistance * morphStart / PlayerCollapseTranslationEnd
-    return if (p >= morphStart) {
-        PlayerCollapseFrame(1f, (1f - p) / PlayerCollapseTranslationEnd * rigidDistance, topStartTangent)
-    } else {
-        val morph = p / morphStart
-        PlayerCollapseFrame(morph, rigidDistance * morph, topStartTangent)
+internal fun playerReleaseFrame(
+    start: PlayerSheetMotionFrame,
+    target: Rect,
+    returning: Boolean,
+    remaining: Float,
+    top: Float,
+): PlayerSheetMotionFrame {
+    val fraction = remaining.coerceIn(0f, 1f)
+    val bounds = playerContainerRect(target, start.bounds, fraction)
+    return PlayerSheetMotionFrame(
+        bounds.translate(Offset(0f, top - bounds.top)),
+        mix(if (returning) 1f else 0f, start.morphProgress, fraction),
+    )
+}
+
+/** Size settles independently while the entire shell retains the finger's vertical velocity. */
+internal class PlayerSheetRelease {
+    private val morph = Animatable(1f)
+    private val top = Animatable(0f)
+    private var start by mutableStateOf<PlayerSheetMotionFrame?>(null)
+    private var target = Rect.Zero
+    private var returning = false
+    var isRunning by mutableStateOf(false)
+        private set
+    val frame: PlayerSheetMotionFrame? get() = start?.let {
+        playerReleaseFrame(it, target, returning, morph.value, top.value)
     }
+
+    suspend fun settle(start: PlayerSheetMotionFrame, target: Rect, returning: Boolean, velocityY: Float) {
+        this.target = target
+        this.returning = returning
+        morph.snapTo(1f)
+        top.snapTo(start.bounds.top)
+        this.start = start
+        isRunning = true
+        try {
+            coroutineScope {
+                launch {
+                    morph.animateTo(0f, spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = PlayerSheetStiffness,
+                        visibilityThreshold = 0.0001f,
+                    ))
+                }
+                launch {
+                    top.animateTo(target.top, spring(
+                        dampingRatio = if (returning) Spring.DampingRatioNoBouncy else PlayerReleasePositionDamping,
+                        stiffness = PlayerSheetStiffness,
+                        visibilityThreshold = 0.1f,
+                    ), initialVelocity = velocityY)
+                }
+            }
+        } finally {
+            isRunning = false
+        }
+    }
+
+    fun reset() { start = null }
 }
 
 internal fun playerContainerRect(source: Rect, target: Rect, progress: Float): Rect {
@@ -90,33 +129,6 @@ internal fun playerFullContentRect(container: Rect, host: Rect): Rect {
     return Rect(container.topLeft, Size(host.width * scale, host.height * scale))
 }
 
-/** Only the closing top edge overshoots; the other three edges keep their path. */
-internal fun playerClosingContainerRect(source: Rect, target: Rect, frame: PlayerCollapseFrame): Rect {
-    val p = frame.morphProgress
-    val linear = playerContainerRect(source, target, p).translate(Offset(0f, frame.offsetY))
-    if (p <= 0f || p >= 1f) return linear
-    val startTop = target.top + frame.offsetY / p
-    val closing = 1f - p
-    val overshootFraction = if (target.height >= target.width) {
-        PlayerCollapsePortraitTopOvershootFraction
-    } else {
-        PlayerCollapseLandscapeTopOvershootFraction
-    }
-    val peakTop = source.top + source.height * overshootFraction
-    val top = if (closing < PlayerCollapseTopReturnStart) {
-        val u = closing / PlayerCollapseTopReturnStart
-        // Cubic Hermite: preserve entry velocity and stop at the small overshoot.
-        val smooth = u * u * (3f - 2f * u)
-        mix(startTop, peakTop, smooth) +
-            frame.topStartTangent * PlayerCollapseTopReturnStart * u * (1f - u) * (1f - u)
-    } else {
-        val u = (closing - PlayerCollapseTopReturnStart) / (1f - PlayerCollapseTopReturnStart)
-        // Zero tangents join the turnaround without a second animation or a pause.
-        mix(peakTop, source.top, u * u * (3f - 2f * u))
-    }
-    return Rect(linear.left, top, linear.right, linear.bottom)
-}
-
 internal data class PlayerSheetMotionFrame(val bounds: Rect, val morphProgress: Float) {
     operator fun plus(other: PlayerSheetMotionFrame) = PlayerSheetMotionFrame(
         Rect(bounds.left + other.bounds.left, bounds.top + other.bounds.top,
@@ -130,77 +142,23 @@ internal data class PlayerSheetMotionFrame(val bounds: Rect, val morphProgress: 
     )
 }
 
-/** Rebase only near an endpoint; retain position and tangent across every path change. */
+/** Select the next direction only at a completed endpoint. */
 internal class PlayerSheetMotionPath(initiallyClosing: Boolean) {
     var closing = initiallyClosing
         private set
     private var previousProgress: Float? = null
-    private var reversal: Reversal? = null
-    private data class Reversal(
-        val progress: Float,
-        val offset: PlayerSheetMotionFrame,
-        val lowerTangent: PlayerSheetMotionFrame,
-        val upperTangent: PlayerSheetMotionFrame,
-    )
 
     fun reset(closing: Boolean, progress: Float) {
         this.closing = closing
         previousProgress = progress
-        reversal = null
     }
 
     fun frame(progress: Float, base: (Float, Boolean) -> PlayerSheetMotionFrame): PlayerSheetMotionFrame {
         val p = progress.coerceIn(0f, 1f)
-        val previous = previousProgress
-        if (previous != null && ((!closing && previous >= 0.95f && p < previous) ||
-                (closing && previous <= 0.05f && p > previous))) {
-            val captured = evaluate(previous, base)
-            val lower = (previous - 0.0001f).coerceAtLeast(0f)
-            val upper = (previous + 0.0001f).coerceAtMost(1f)
-            val tangent = (evaluate(upper, base) - evaluate(lower, base)) * (1f / (upper - lower))
-            closing = !closing
-            val start = rebasedBase(previous, previous, base)
-            val lowerSlope = if (previous > lower) {
-                (start - rebasedBase(lower, previous, base)) * (1f / (previous - lower))
-            } else tangent
-            val upperSlope = if (upper > previous) {
-                (rebasedBase(upper, previous, base) - start) * (1f / (upper - previous))
-            } else tangent
-            reversal = Reversal(previous, captured - start,
-                (tangent - lowerSlope) * -previous,
-                (tangent - upperSlope) * (1f - previous))
-        }
+        if ((!closing && previousProgress == 1f && p < 1f) ||
+            (closing && previousProgress == 0f && p > 0f)) closing = !closing
         previousProgress = p
-        return evaluate(p, base)
-    }
-
-    private fun rebasedBase(p: Float, start: Float, base: (Float, Boolean) -> PlayerSheetMotionFrame) = base(
-        if (closing) (p / start.coerceAtLeast(0.000001f)).coerceIn(0f, 1f)
-        else ((p - start) / (1f - start).coerceAtLeast(0.000001f)).coerceIn(0f, 1f),
-        closing,
-    )
-
-    private fun evaluate(p: Float, base: (Float, Boolean) -> PlayerSheetMotionFrame): PlayerSheetMotionFrame {
-        val capture = reversal ?: return base(p, closing)
-        val upper = p >= capture.progress
-        val distance = if (upper) 1f - capture.progress else capture.progress
-        val u = (kotlin.math.abs(p - capture.progress) / distance.coerceAtLeast(0.000001f)).coerceIn(0f, 1f)
-        val remaining = 1f - u
-        val frame = rebasedBase(p, capture.progress, base)
-        val offset = capture.offset
-        val tangent = if (upper) capture.upperTangent else capture.lowerTangent
-        val offsetWeight = remaining * remaining * (1f + 2f * u)
-        val tangentWeight = u * remaining * remaining
-        return PlayerSheetMotionFrame(
-            Rect(
-                frame.bounds.left + offset.bounds.left * offsetWeight + tangent.bounds.left * tangentWeight,
-                frame.bounds.top + offset.bounds.top * offsetWeight + tangent.bounds.top * tangentWeight,
-                frame.bounds.right + offset.bounds.right * offsetWeight + tangent.bounds.right * tangentWeight,
-                frame.bounds.bottom + offset.bounds.bottom * offsetWeight + tangent.bounds.bottom * tangentWeight,
-            ),
-            (frame.morphProgress + offset.morphProgress * offsetWeight + tangent.morphProgress * tangentWeight)
-                .coerceIn(0f, 1f),
-        )
+        return base(p, closing)
     }
 }
 

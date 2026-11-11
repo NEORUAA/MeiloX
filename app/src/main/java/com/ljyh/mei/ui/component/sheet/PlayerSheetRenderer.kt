@@ -11,7 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.structuralEqualityPolicy
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawWithCache
@@ -90,6 +92,9 @@ import io.github.neoruaa.glasmio.core.LocalGlassColors
 import com.ljyh.mei.ui.component.player.LocalMiniPlayerAppearance
 import com.ljyh.mei.ui.component.player.LocalPlayerArtwork
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 internal val LocalPlayerSheet = staticCompositionLocalOf<PlayerSheetLayers?> { null }
@@ -101,21 +106,55 @@ internal class PlayerSheetLayers(
     val miniContent: GraphicsLayer,
     val miniTrailingContent: GraphicsLayer,
     val fullContent: GraphicsLayer,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) {
     private val motionPath = PlayerSheetMotionPath(state.isExpanded)
     private var hostDensity by mutableStateOf(1f)
-    private fun baseMotionFrame(progress: Float, closing: Boolean): PlayerSheetMotionFrame {
-        val frame = playerCollapseFrame(progress, hostBounds.height,
-            (state.expandedBound.value - state.collapsedBound.value) * hostDensity, closing)
-        val bounds = if (closing) playerClosingContainerRect(sourceContainer, hostBounds, frame)
-            else playerContainerRect(sourceContainer, hostBounds, frame.morphProgress)
-        return PlayerSheetMotionFrame(bounds, frame.morphProgress)
+    private var closingDrag by mutableStateOf(false)
+    private val release = PlayerSheetRelease()
+    private var releaseJob: Job? = null
+
+    fun expand() {
+        if (!isTransitioning && state.isCollapsed) state.expand(playerSheetSpring())
     }
+
+    fun collapse() {
+        if (!isTransitioning && state.isExpanded) state.collapse(playerSheetSpring())
+    }
+
+    fun beginClosingDrag() {
+        if (state.isExpanded) {
+            closingDrag = true
+            trailingAnchor.anchorsRight(1f)
+            motionPath.reset(true, state.progress)
+        }
+    }
+
+    fun endDrag(velocityY: Float) {
+        if (!closingDrag) return
+        val start = motionFrame
+        val returning = state.targetAnchor == io.github.neoruaa.glasmio.scaffold.expandedAnchor
+        val target = if (returning) hostBounds else sourceContainer
+        closingDrag = false
+        releaseJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            release.settle(start, target, returning, velocityY)
+        }
+    }
+
+    fun dispose() {
+        releaseJob?.cancel()
+    }
+
+    private fun baseMotionFrame(progress: Float, closing: Boolean) = PlayerSheetMotionFrame(
+        playerContainerRect(sourceContainer, hostBounds, progress), progress,
+    )
     private var motionGeometryVersion by mutableIntStateOf(0)
     private val cachedMotionFrame = derivedStateOf(structuralEqualityPolicy()) {
         motionGeometryVersion
-        motionPath.frame(state.progress, ::baseMotionFrame)
+        if (closingDrag) {
+            playerClosingDragFrame(hostBounds, state.progress,
+                (state.expandedBound.value - state.collapsedBound.value) * hostDensity)
+        } else release.frame ?: motionPath.frame(state.progress, ::baseMotionFrame)
     }
     private val motionFrame get() = cachedMotionFrame.value
     val fixedSizeContent get() = hostBounds.width > hostBounds.height
@@ -129,11 +168,11 @@ internal class PlayerSheetLayers(
         val linear = playerContainerRect(sourceContainer, hostBounds, frame.morphProgress)
         return Offset(0f, frame.bounds.top - linear.top)
     }
-    fun containerCornerRadius(screenRadius: Float): Float = if (motionPath.closing && state.isTransitioning) {
+    fun containerCornerRadius(screenRadius: Float): Float = if (motionPath.closing && isTransitioning) {
         playerClosingCornerRadius(sourceContainer.height / 2f, screenRadius, motionProgress)
     } else playerContainerCornerRadius(sourceContainer.height / 2f, screenRadius, motionProgress)
 
-    private val transitioning = derivedStateOf { state.isTransitioning }
+    private val transitioning = derivedStateOf { state.isTransitioning || release.isRunning }
     val isTransitioning get() = transitioning.value
     var hostBounds by mutableStateOf(Rect.Zero)
         private set
@@ -176,7 +215,7 @@ internal class PlayerSheetLayers(
     fun updatePressHighlightPointer(rootPosition: Offset) = pressLight.updatePointer(rootPosition)
 
     fun updateMiniPressHighlight(bounds: Rect, highlight: GlassPressHighlight) {
-        if (!state.isTransitioning) {
+        if (!isTransitioning) {
             if (highlight.progress > 0f && pressLight.hasCapture) pressLight.clear()
             miniPressedBounds = bounds
             miniPressHighlight = highlight
@@ -294,7 +333,9 @@ internal class PlayerSheetLayers(
     }
 
     fun updateFrozenBounds() {
-        if (!state.isTransitioning) {
+        if (!isTransitioning) {
+            closingDrag = false
+            release.reset()
             motionPath.reset(state.isExpanded, state.progress)
             if (transitionCaptureActive) motionGeometryVersion++
             transitionCaptureActive = false
@@ -358,9 +399,11 @@ internal fun rememberPlayerSheetLayers(state: GlasmioBottomSheetState): PlayerSh
     val mini = rememberGraphicsLayer()
     val miniTrailing = rememberGraphicsLayer()
     val full = rememberGraphicsLayer()
-    return remember(state, miniHost, mini, miniTrailing, full, scope) {
+    val layers = remember(state, miniHost, mini, miniTrailing, full, scope) {
         PlayerSheetLayers(state, miniHost, mini, miniTrailing, full, scope)
     }
+    DisposableEffect(layers) { onDispose { layers.dispose() } }
+    return layers
 }
 
 /** Always draw live at rest. Recording is only a source for the shared transition. */
@@ -475,26 +518,45 @@ private fun Modifier.sheetGestures(
         )
     }
 }.pointerInput(state) {
-    val tracker = VelocityTracker()
-    detectVerticalDragGestures(
-        onDragStart = {
-            tracker.resetTracking()
-            layers.prepareTransition()
-            state.beginDrag()
-        },
-        onVerticalDrag = { change, amount ->
-            tracker.addPointerInputChange(change)
-            state.dispatchRawDelta(amount)
-        },
-        onDragCancel = {
-            layers.releasePressHighlight()
-            state.cancelDrag()
-        },
-        onDragEnd = {
-            layers.releasePressHighlight()
-            state.performFling(-tracker.calculateVelocity().y, null)
-        },
-    )
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        var firstDelta = 0f
+        val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
+            // A horizontal child keeps events available to native glass feedback.
+            // Claim vertical slop only while the sheet still owns this gesture.
+            if (!layers.isTransitioning) {
+                firstDelta = overSlop
+                change.consume()
+            }
+        } ?: return@awaitEachGesture
+        val tracker = VelocityTracker()
+        tracker.addPointerInputChange(start)
+        layers.prepareTransition()
+        layers.beginClosingDrag()
+        state.beginDrag()
+        state.dispatchRawDelta(firstDelta)
+        var completed = false
+        try {
+            val released = verticalDrag(start.id) { change ->
+                tracker.addPointerInputChange(change)
+                state.dispatchRawDelta(change.positionChange().y)
+                change.consume()
+            }
+            if (released) {
+                completed = true
+                layers.releasePressHighlight()
+                val velocityY = tracker.calculateVelocity().y
+                state.performFling(-velocityY, null)
+                layers.endDrag(velocityY)
+            }
+        } finally {
+            if (!completed) {
+                layers.releasePressHighlight()
+                state.cancelDrag()
+                layers.endDrag(0f)
+            }
+        }
+    }
 }
 
 /** Clip hidden controls' hit testing as well as their drawing; consuming a down is too late
@@ -508,7 +570,7 @@ private fun Modifier.clipPlayerRecordingHost(
     val origin = remember { mutableStateOf(Offset.Zero) }
     return onGloballyPositioned { origin.value = it.positionInRoot() }
         .graphicsLayer {
-            clip = layers.state.isTransitioning
+            clip = layers.isTransitioning
             if (clip) {
                 val bounds = layers.containerBounds
                     .translate(-origin.value)
@@ -551,7 +613,7 @@ private fun Modifier.clipPlayerBackground(
     val offset = if (translateContent) layers.backgroundOffset else Offset.Zero
     translationX = offset.x
     translationY = offset.y
-    clip = layers.state.isTransitioning
+    clip = layers.isTransitioning
     if (clip) {
         val bounds = layers.containerBounds
             .translate(-layers.hostBounds.topLeft - offset)
@@ -561,7 +623,7 @@ private fun Modifier.clipPlayerBackground(
         }
     }
 }.drawWithCache {
-    if (!layers.state.isTransitioning) {
+    if (!layers.isTransitioning) {
         onDrawWithContent { drawContent() }
     } else {
         val offset = if (translateContent) layers.backgroundOffset else Offset.Zero
@@ -595,8 +657,8 @@ fun BottomSheet(
 ) {
     val layers = checkNotNull(LocalPlayerSheet.current)
     val landscape = com.ljyh.mei.ui.component.utils.rememberDeviceInfo().isLandscape
-    val active by remember(state) { derivedStateOf { state.isTransitioning } }
-    val expanded by remember(state) { derivedStateOf { state.isExpanded } }
+    val active by remember(layers) { derivedStateOf { layers.isTransitioning } }
+    val expanded by remember(layers) { derivedStateOf { state.isExpanded && !layers.isTransitioning } }
     val collapsed by remember(state) { derivedStateOf { state.isCollapsed } }
     val dismissed by remember(state) { derivedStateOf { state.isDismissed } }
     // The hidden mini host stays at the collapsed anchor through normal player
@@ -617,7 +679,7 @@ fun BottomSheet(
     )
     val expandedCornerRadius = rememberPlayerScreenCornerRadius(layers.hostBounds)
     SideEffect { layers.updateFrozenBounds() }
-    BackHandler(enabled = !collapsed && !dismissed, onBack = state::collapseSoft)
+    BackHandler(enabled = active || (!collapsed && !dismissed), onBack = layers::collapse)
 
     val hostDensity = LocalDensity.current.density
     Box(modifier.fillMaxSize().onGloballyPositioned { layers.updateHost(it.boundsInRoot(), hostDensity) }) {

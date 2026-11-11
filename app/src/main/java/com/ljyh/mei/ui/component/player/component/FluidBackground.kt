@@ -62,7 +62,7 @@ fun FluidBackground(
         derivedStateOf { sheet == null || sheet.state.isExpanded }
     }
     val sheetVisible by remember(sheet) {
-        derivedStateOf { sheet == null || sheet.state.isExpanded || sheet.state.isTransitioning }
+        derivedStateOf { sheet == null || sheet.state.isExpanded || sheet.isTransitioning }
     }
     val backgroundActive = alpha > 0.01f && sheetVisible
     val (flowSpeed) = rememberPreference(MeshFlowSpeedKey, defaultValue = 0.25f)
