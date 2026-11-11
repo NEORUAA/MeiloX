@@ -581,7 +581,7 @@ fun AppleMusicPlayer(
                                     lyricData = lyricLine,
                                     active = active,
                                     showSourceBadge = false,
-                                    topFadeHeight = AppleMusicDimensions.lyricTopFade,
+                                    topFadeHeight = 60.dp,
                                     bottomFadeHeight = AppleMusicDimensions.lyricBottomFade,
                                     rendererVerticalPadding = 0.dp,
                                     synchronizeEntryWithParent = true,
@@ -772,7 +772,7 @@ fun AppleMusicPlayer(
                                 },
                                 onSleepTimerClick = { overlayHandler.showSleepTimer() },
                                 onAddToPlaylistClick = {
-                                    mediaMetadata?.let { overlayHandler.showAddToPlaylist(it.id) }
+                                    mediaMetadata?.let { overlayHandler.showAddToPlaylist(it) }
                                 },
                                 onDownloadClick = {
                                     overlayHandler.handleMoreAction(com.ljyh.mei.ui.model.MoreAction.DOWNLOAD)

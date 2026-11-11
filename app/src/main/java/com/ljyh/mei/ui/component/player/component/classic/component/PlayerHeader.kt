@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import com.ljyh.mei.ui.component.player.component.rememberPlayerFavoriteMotion
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
@@ -63,6 +65,7 @@ fun PlayerHeader(
     modeLabel: String? = LocalPlayerRoamingModeLabel.current,
 ) {
     var metadataWidth by remember { mutableIntStateOf(0) }
+    val favoriteMotion = rememberPlayerFavoriteMotion(isLiked, mediaMetadata.id)
     val marqueeEnabled = LocalPlayerSheet.current?.state?.isExpanded != false
     val metadataClick = if (appleMusicStyle) {
         Modifier.clickable(
@@ -195,7 +198,7 @@ fun PlayerHeader(
         ) {
             if (showLikeButton) {
                 IconButton(
-                    onClick = onLikeClick,
+                    onClick = { favoriteMotion.click(isLiked, onLikeClick) },
                     modifier = Modifier
                         .size(34.dp),
                 ) {
@@ -206,6 +209,10 @@ fun PlayerHeader(
                         contentAlignment = Alignment.Center,
                     ) {
                         SfIcon(
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = favoriteMotion.scale.value
+                                scaleY = favoriteMotion.scale.value
+                            },
                             symbol = if (isLiked) SfSymbol.StarFilled else SfSymbol.Star,
                             contentDescription = stringResource(R.string.app_tab_library_songs),
                             tint = iconColor.copy(alpha = 0.8f),

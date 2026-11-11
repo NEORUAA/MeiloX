@@ -7,6 +7,9 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -208,9 +211,9 @@ fun LyricScreen(
                 interactionSource = remember { MutableInteractionSource() }
             ) { onToggleControls(true) }
     ) {
-        // Bounds of the bottom-right source badge, in this box's coordinates. The
-        // lower-half tap-to-toggle gesture runs on the Initial pass and consumes taps
-        // before children see them, so the badge region must be excluded explicitly.
+        // Hide visible controls on lower-half taps, excluding the source badge.
+        // While controls are hidden, lyric rows own the click and seek before
+        // their existing callback restores controls. Empty space uses the parent click.
         var badgeBounds by remember { mutableStateOf<Rect?>(null) }
         var badgeHostCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
         Box(
@@ -238,9 +241,9 @@ fun LyricScreen(
                             }
                             if (change.changedToUpIgnoreConsumed()) {
                                 released = true
-                                if (lowerHalf && !moved && !inBadge) {
+                                if (controlsVisible && lowerHalf && !moved && !inBadge) {
                                     change.consume()
-                                    onToggleControls(!controlsVisible)
+                                    onToggleControls(false)
                                 }
                             }
                             pressed = event.changes.any { it.pressed }
@@ -391,7 +394,7 @@ fun LyricScreen(
                         }
                     }
                     key(keepAliveZonePx) {
-                        Box(Modifier.fillMaxSize().padding(contentPadding)) {
+                        CompositionLocalProvider(LocalIndication provides ripple(color = Color.White)) {
                             PlayerLyricsView(
                                 showTranslation = translationEnabled,
                                 showPhonetic = romanizationEnabled,
@@ -431,7 +434,8 @@ fun LyricScreen(
                                         }
                                     }
                                 },
-                                modifier = Modifier
+                                modifier = Modifier.fillMaxSize()
+                                    .padding(contentPadding)
                                     .padding(vertical = rendererVerticalPadding)
                                     .onSizeChanged { lyricWidthPx = it.width }
                                     .graphicsLayer {

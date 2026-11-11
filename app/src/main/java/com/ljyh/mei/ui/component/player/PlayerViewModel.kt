@@ -77,6 +77,8 @@ class PlayerViewModel @Inject constructor(
 
     private val _like = MutableStateFlow<Resource<Boolean>>(Resource.Loading)
     val like: StateFlow<Resource<Boolean>> = _like
+    private val mutableLikeFailures = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val likeFailures = mutableLikeFailures.asSharedFlow()
     private val _canLike = MutableStateFlow(false)
     val canLike: StateFlow<Boolean> = _canLike.asStateFlow()
     private var selectedLikeRef: TrackRef? = null
@@ -241,20 +243,27 @@ class PlayerViewModel @Inject constructor(
         val account = ((provider as? AccountRevisionCapability)?.accountRevision as? StateFlow<String?>)?.value
             ?: selectedLikeAccountRevision
         if (!currentSourceLike(ref, generation, provider)) return
+        likeStatusJob?.cancel()
+        _like.value = Resource.Success(!(current ?: false))
+        if (sourceLikeWriteJob?.isActive == true) return
         sourceLikeWriteJob = viewModelScope.launch {
+            var confirmed = current
             try {
-                currentCoroutineContext().ensureActive()
-                if (!currentSourceLike(ref, generation, provider)) return@launch
-                val liked = sourceRouter.toggleLike(ref, account, provider)
-                if (currentSourceLike(ref, generation, provider)) {
-                    mutableSongLikes.update { it + (TrackRefCodec.mediaId(ref) to liked) }
-                    _like.value = Resource.Success(liked)
+                while (currentSourceLike(ref, generation, provider)) {
+                    currentCoroutineContext().ensureActive()
+                    val attempted = (_like.value as? Resource.Success<Boolean>)?.data ?: return@launch
+                    sourceRouter.setLiked(ref, attempted, account, provider)
+                    if (!currentSourceLike(ref, generation, provider)) return@launch
+                    confirmed = attempted
+                    mutableSongLikes.update { it + (TrackRefCodec.mediaId(ref) to attempted) }
+                    if ((_like.value as? Resource.Success<Boolean>)?.data == attempted) break
                 }
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (error: Exception) {
                 if (currentSourceLike(ref, generation, provider)) {
                     val message = sourceLikeError(error)
-                    _like.value = current?.let { Resource.Success(it) } ?: Resource.Error(message)
+                    _like.value = confirmed?.let { Resource.Success(it) } ?: Resource.Error(message)
+                    mutableLikeFailures.tryEmit(Unit)
                     Toast.makeText(AppContext.instance, message, Toast.LENGTH_SHORT).show()
                 }
             }

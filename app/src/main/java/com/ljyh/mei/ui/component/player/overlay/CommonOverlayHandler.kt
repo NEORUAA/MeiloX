@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.overlay
 
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import android.widget.Toast
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -63,6 +64,12 @@ fun CommonOverlayHandler(
     sheetState: GlasmioBottomSheetState? = null,
     modifier: Modifier = Modifier
 ) {
+    val sheetLayers = LocalPlayerSheet.current
+    val collapsePlayer: () -> Unit = {
+        if (sheetLayers?.isTransitioning != true && sheetState?.isExpanded == true) {
+            sheetState.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+        }
+    }
     val context = LocalContext.current
     val navController = LocalNavController.current
     val playerViewModel = stateContainer.playerViewModel
@@ -94,11 +101,11 @@ fun CommonOverlayHandler(
         is OverlayState.AlbumArtist -> {
             val onAlbumClick: (Long) -> Unit = { id ->
                 Screen.Album.navigate(navController) { addPath(id.toString()) }
-                sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                collapsePlayer()
             }
             val onArtistClick: (Long) -> Unit = { id ->
                 Screen.Artist.navigate(navController) { addPath(id.toString()) }
-                sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                collapsePlayer()
             }
             val anchor = overlay.anchorBounds
             if (anchor != null) {
@@ -114,7 +121,7 @@ fun CommonOverlayHandler(
                         val playlistId = overlay.playlistId
                         if (playlistId != null && playlistId > 0) {
                             Screen.PlayList.navigate(navController) { addPath(playlistId.toString()) }
-                            sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                            collapsePlayer()
                         } else {
                             overlayHandler.showPlaylist()
                         }
@@ -123,7 +130,7 @@ fun CommonOverlayHandler(
                     canOpenSourceContent = { sourceContentSupported(it, sourceProviders) },
                     onSourceContentClick = {
                         navigateSourceContent(navController, it)
-                        sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                        collapsePlayer()
                     },
                 )
             } else {
@@ -137,7 +144,7 @@ fun CommonOverlayHandler(
                     canOpenSourceContent = { sourceContentSupported(it, sourceProviders) },
                     onSourceContentClick = {
                         navigateSourceContent(navController, it)
-                        sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                        collapsePlayer()
                     },
                 )
             }
@@ -214,7 +221,7 @@ fun CommonOverlayHandler(
                                 addQuery("providerId", v.trackRef.providerId)
                             }
                             overlayHandler.dismiss()
-                            sheetState?.collapse(spring(stiffness = Spring.StiffnessVeryLow))
+                            collapsePlayer()
                         }
 
                     }else{

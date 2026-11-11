@@ -263,7 +263,7 @@ fun ClassicPhoneLayout(
             },
             onAddToPlaylistClick = {
                 mediaMetadata?.let {
-                    overlayHandler.showAddToPlaylist(it.id)
+                    overlayHandler.showAddToPlaylist(it)
                 }
             },
             onDownloadClick = {

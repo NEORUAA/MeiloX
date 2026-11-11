@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import com.ljyh.mei.ui.component.player.component.rememberPlayerFavoriteMotion
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -80,6 +82,7 @@ fun Title(
     val artistStyle = subTitleStyle.copy(shadow = shadowStyle)
     val artistColor = Color.White.copy(alpha = 0.4f)
     var metadataWidth by remember { mutableIntStateOf(0) }
+    val favoriteMotion = rememberPlayerFavoriteMotion(isLiked, title to subTitle)
 
     Row(
         modifier = modifier.onGloballyPositioned(onRowPositioned),
@@ -143,27 +146,32 @@ fun Title(
                             indication = null,
                             enabled = enabled,
                             role = Role.Button,
-                            onClick = onLikeClick,
+                            onClick = { favoriteMotion.click(isLiked, onLikeClick) },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (isLiked) {
+                    Box(Modifier.graphicsLayer {
+                        scaleX = favoriteMotion.scale.value
+                        scaleY = favoriteMotion.scale.value
+                    }, contentAlignment = Alignment.Center) {
+                        if (isLiked) {
+                            SfIcon(
+                                symbol = SfSymbol.StarFilled,
+                                contentDescription = null,
+                                modifier = Modifier.blur(2.dp, BlurredEdgeTreatment.Unbounded),
+                                tint = iconColor.copy(alpha = 0.28f),
+                                size = 24.dp,
+                                weight = FontWeight.Bold,
+                            )
+                        }
                         SfIcon(
-                            symbol = SfSymbol.StarFilled,
-                            contentDescription = null,
-                            modifier = Modifier.blur(2.dp, BlurredEdgeTreatment.Unbounded),
-                            tint = iconColor.copy(alpha = 0.28f),
+                            symbol = if (isLiked) SfSymbol.StarFilled else SfSymbol.Star,
+                            contentDescription = stringResource(R.string.app_tab_library_songs),
+                            tint = iconColor.copy(alpha = 0.8f),
                             size = 24.dp,
-                            weight = FontWeight.Bold,
+                            weight = FontWeight.Bold
                         )
                     }
-                    SfIcon(
-                        symbol = if (isLiked) SfSymbol.StarFilled else SfSymbol.Star,
-                        contentDescription = stringResource(R.string.app_tab_library_songs),
-                        tint = iconColor.copy(alpha = 0.8f),
-                        size = 24.dp,
-                        weight = FontWeight.Bold
-                    )
                 }
             }
 

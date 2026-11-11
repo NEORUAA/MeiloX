@@ -9,6 +9,7 @@ import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
@@ -38,7 +39,8 @@ import com.ljyh.mei.ui.navigation.MeiNavigator
 class PlayerOverlayHandler(
     private val stateContainer: PlayerStateContainer,
     private val navController: MeiNavigator,
-    private val context: android.content.Context
+    private val context: android.content.Context,
+    private val onNavigateFromPlayer: () -> Unit = {},
 ) {
     private val _currentOverlay = mutableStateOf<OverlayState>(OverlayState.None)
     val currentOverlay: State<OverlayState> = _currentOverlay
@@ -79,6 +81,7 @@ class PlayerOverlayHandler(
         if (metadata.isLocal || metadata.isPodcast) return
         dismiss()
         Screen.SourcePlaylistPicker.navigate(navController) { addPath(Uri.encode(TrackRefCodec.encode(metadata.trackRef))) }
+        onNavigateFromPlayer()
     }
 
     /**
@@ -259,15 +262,18 @@ class PlayerOverlayHandler(
 @Composable
 fun rememberOverlayHandler(
     stateContainer: PlayerStateContainer,
-    navController: MeiNavigator
+    navController: MeiNavigator,
+    onNavigateFromPlayer: () -> Unit = {},
 ): PlayerOverlayHandler {
     val context = LocalContext.current
 
-    return remember(stateContainer) {
+    val currentOnNavigate = rememberUpdatedState(onNavigateFromPlayer)
+    return remember(stateContainer, navController, context) {
         PlayerOverlayHandler(
             stateContainer = stateContainer,
             navController = navController,
-            context = context
+            context = context,
+            onNavigateFromPlayer = { currentOnNavigate.value() },
         )
     }
 }

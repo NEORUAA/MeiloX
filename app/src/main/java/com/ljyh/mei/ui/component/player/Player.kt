@@ -1,5 +1,8 @@
 package com.ljyh.mei.ui.component.player
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import android.os.Build
 import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
@@ -98,6 +101,12 @@ fun BottomSheetPlayer(
         playerConnection = playerConnection,
         progressUpdatesEnabled = progressUpdatesEnabled,
     )
+    val favoriteHaptics = LocalHapticFeedback.current
+    LaunchedEffect(playerViewModel, favoriteHaptics) {
+        playerViewModel.likeFailures.collect {
+            favoriteHaptics.performHapticFeedback(HapticFeedbackType.Reject)
+        }
+    }
     val roamingMode by playerConnection.privateFmMode.collectAsStateWithLifecycle()
     val roamingScene by playerConnection.privateFmScene.collectAsStateWithLifecycle()
     val roamingModeLabel = if (stateContainer.isFMMode.value &&
@@ -114,9 +123,11 @@ fun BottomSheetPlayer(
     } else null
 
     // 创建弹窗处理器
+    val sheetLayers = rememberPlayerSheetLayers(state)
     val overlayHandler = rememberOverlayHandler(
         stateContainer = stateContainer,
-        navController = navController
+        navController = navController,
+        onNavigateFromPlayer = sheetLayers::collapse,
     )
 
     val currentMetadata by playerConnection.mediaMetadata.collectAsState()
@@ -132,7 +143,6 @@ fun BottomSheetPlayer(
             )
         }
     }
-    val sheetLayers = rememberPlayerSheetLayers(state)
 
 
     // 单入口、双实现 - 根据样式渲染不同的播放器
