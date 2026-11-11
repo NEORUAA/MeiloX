@@ -138,7 +138,6 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val PlayerQueueHistoryGap = 16.dp
-private val PlayerQueueCoverHeight = AppleMusicDimensions.headerSize + 16.dp
 internal const val PlayerQueueCurrentHeaderKey = "queue_current_song"
 
 // Fit to the reference recording's row travel, including its gradual settling tail.
@@ -604,6 +603,7 @@ fun PlayerQueuePage(
     onHeaderPositionChanged: (State<PlayerQueueHeaderPosition>) -> Unit = {},
     bottomContentPadding: Dp = 56.dp,
     landscapeHeader: Boolean = false,
+    currentHeaderHeight: Dp = AppleMusicDimensions.headerSize,
 ) {
     val selectionPadding = 5.dp
     val listStartPadding = (horizontalPadding - selectionPadding).coerceAtLeast(0.dp)
@@ -612,8 +612,8 @@ fun PlayerQueuePage(
     val player = playerConnection.player
     val context = LocalContext.current
     val density = LocalDensity.current
-    val coverHeightPx = with(density) { PlayerQueueCoverHeight.toPx() }
-    val visualCoverHeightPx = with(density) { AppleMusicDimensions.headerSize.toPx() }
+    val coverHeightPx = with(density) { (currentHeaderHeight + 16.dp).toPx() }
+    val visualCoverHeightPx = with(density) { currentHeaderHeight.toPx() }
     val historyGap = if (landscapeHeader) 6.dp else PlayerQueueHistoryGap
     val historyGapPx = with(density) { historyGap.toPx() }
     val rowHeightPx = with(density) { 56.dp.roundToPx().toFloat() }
@@ -1398,12 +1398,15 @@ fun PlayerQueuePage(
                         item(key = PlayerQueueCurrentHeaderKey, contentType = "current_header") {
                             Column(
                                 Modifier.fillMaxWidth().onSizeChanged { measuredHeaderHeightPx = it.height }
-                                    .padding(horizontal = selectionPadding),
+                                    .padding(
+                                        start = minOf(horizontalPadding, selectionPadding),
+                                        end = minOf(contentEndPadding, selectionPadding),
+                                    ),
                             ) {
                                 if (landscapeHeader) {
                                     Spacer(Modifier.height(1.dp))
                                 } else {
-                                    Box(Modifier.fillMaxWidth().height(AppleMusicDimensions.headerSize)) {
+                                    Box(Modifier.fillMaxWidth().height(currentHeaderHeight)) {
                                         currentHeader?.invoke(coverFade)
                                     }
                                     Spacer(Modifier.height(16.dp))

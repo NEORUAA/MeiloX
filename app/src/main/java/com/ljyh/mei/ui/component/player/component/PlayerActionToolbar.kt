@@ -67,6 +67,7 @@ fun PlayerActionToolbar(
     onSleepTimerClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onDownloadClick: () -> Unit,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.SpaceEvenly,
     onMoreClick: () -> Unit
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -103,7 +104,7 @@ fun PlayerActionToolbar(
     Spacer(Modifier.height(16.dp))
 
     Row(
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = horizontalArrangement,
         verticalAlignment = Alignment.CenterVertically,
         // Apply shared opacity after the lyrics cutout has been composed.
         modifier = modifier.fillMaxWidth()

@@ -15,6 +15,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppleMusicPlaybackMotionTest {
+    @Test fun metadataReturnsFromOffscreenQueueToTheControlTitle() {
+        val album = androidx.compose.ui.geometry.Offset(0f, 72f)
+        for (queueTop in listOf(-600f, -42f, 0f, 800f)) {
+            val header = androidx.compose.ui.geometry.Offset(0f, 48f + queueTop)
+            assertEquals(header, appleMusicInfoOffset(album, header, 1f, true, androidx.compose.ui.geometry.Offset.Zero))
+            assertEquals(album, appleMusicInfoOffset(album, header, 0f, true, androidx.compose.ui.geometry.Offset.Zero))
+            val halfway = appleMusicInfoOffset(album, header, 0.5f, true, androidx.compose.ui.geometry.Offset.Zero)
+            assertEquals((album.y + header.y) / 2f, halfway.y, 0f)
+        }
+    }
+
     @Test fun miniMetadataSwipeUsesVelocityOrHalfTheActualTitleViewport() {
         assertEquals(0, miniPlayerSwipeDirection(-99f, 200, 0f))
         assertEquals(1, miniPlayerSwipeDirection(-100f, 200, 0f))

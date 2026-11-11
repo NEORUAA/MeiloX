@@ -76,6 +76,8 @@ fun Cover(
     mediaMetadata: MediaMetadata,
     isPlaying: Boolean,
     modifier: Modifier,
+    pausedScale: Float = 0.75f,
+    onClick: (() -> Unit)? = null,
     onDoubleClick: (Offset, Int) -> Unit = { _, _ ->}
 ) {
     val context = LocalContext.current
@@ -99,7 +101,7 @@ fun Cover(
     }
 
     val animatedCoverScale by if (playerStyle == PlayerStyle.AppleMusic) {
-        rememberAppleMusicPlaybackScale(isPlaying, sheetExpanded)
+        rememberAppleMusicPlaybackScale(isPlaying, sheetExpanded, pausedScale)
     } else animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.9f,
         animationSpec = if (sheetExpanded) spring(
@@ -110,9 +112,11 @@ fun Cover(
     )
 
     val coverScale = rememberUpdatedState(
-        if (sheetExpanded) animatedCoverScale else if (isPlaying) 1f else if (playerStyle == PlayerStyle.AppleMusic) 0.75f else 0.9f,
+        if (sheetExpanded) animatedCoverScale else if (isPlaying) 1f else if (playerStyle == PlayerStyle.AppleMusic) pausedScale else 0.9f,
     )
 
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnDoubleClick by rememberUpdatedState(onDoubleClick)
     var showFullImage by remember { mutableStateOf(false) }
     Box(
         modifier = modifier,
@@ -141,11 +145,12 @@ fun Cover(
                     .fillMaxSize()
                     .aspectRatio(1f)
                     .shadow(12.dp, coverShape)
-                    .pointerInput(Unit) {
+                    .pointerInput(onClick != null) {
                         detectTapGestures(
-                            onDoubleTap = { offset ->
-                                onDoubleClick(offset, size.width)
-                            },
+                            onTap = { currentOnClick?.invoke() },
+                            onDoubleTap = if (currentOnClick == null) {
+                                { offset -> currentOnDoubleClick(offset, size.width) }
+                            } else null,
                             onLongPress = {
                                 showFullImage = true
                             }

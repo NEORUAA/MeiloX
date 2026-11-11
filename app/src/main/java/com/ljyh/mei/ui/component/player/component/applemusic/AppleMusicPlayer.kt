@@ -113,7 +113,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private enum class AppleMusicPlayerPage { Artwork, Lyrics, Queue }
+internal enum class AppleMusicPlayerPage { Artwork, Lyrics, Queue }
 
 @OptIn(UnstableApi::class)
 @Composable

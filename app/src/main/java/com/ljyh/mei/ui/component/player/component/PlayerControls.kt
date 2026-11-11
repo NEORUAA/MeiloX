@@ -56,6 +56,7 @@ fun PlayerControls(
     isPlaying: Boolean,
     playbackState: Int,
     showSideSpacers: Boolean = true,
+    evenSpacing: Boolean = false,
 ){
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val appleMusicStyle = playerStyle == PlayerStyle.AppleMusic
@@ -63,23 +64,25 @@ fun PlayerControls(
     val playTargetSize = if (appleMusicStyle) 64.dp else 84.dp
     val skipIconSize = if (appleMusicStyle) 44.dp else 32.dp
     val playIconSize = if (appleMusicStyle) 44.dp else 48.dp
+    val skipPressOffset = if (evenSpacing) 0.dp else 2.dp
     Box(modifier = modifier){
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start,
+            horizontalArrangement = if (evenSpacing) Arrangement.SpaceEvenly else Arrangement.Start,
             modifier = Modifier
                 .fillMaxWidth()
                 .then(if (appleMusicStyle) Modifier.height(playTargetSize) else Modifier)
         ) {
+            val buttonSlot = if (evenSpacing) Modifier else Modifier.weight(1f)
             if (appleMusicStyle && showSideSpacers) Spacer(Modifier.weight(0.4f))
 
             //previous
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = buttonSlot) {
                 PlayerTransportButton(
                     appleMusicStyle = appleMusicStyle,
                     enabled = canSkipPrevious,
                     onClick = playerConnection::seekToPrevious,
-                    pressOffsetX = 2.dp,
+                    pressOffsetX = skipPressOffset,
                     modifier = Modifier
                         .size(skipTargetSize)
                         .align(Alignment.Center)
@@ -95,7 +98,7 @@ fun PlayerControls(
                 }
             }
             //play/pause
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = buttonSlot) {
                 PlayerTransportButton(
                     appleMusicStyle = appleMusicStyle,
                     onClick = {
@@ -124,12 +127,12 @@ fun PlayerControls(
 
 
             //next
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = buttonSlot) {
                 PlayerTransportButton(
                     appleMusicStyle = appleMusicStyle,
                     enabled = canSkipNext,
                     onClick = playerConnection::seekToNext,
-                    pressOffsetX = (-2).dp,
+                    pressOffsetX = -skipPressOffset,
                     modifier = Modifier
                         .size(skipTargetSize)
                         .align(Alignment.Center)

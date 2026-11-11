@@ -29,6 +29,9 @@ import com.ljyh.mei.ui.component.sheet.isUsable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.ljyh.mei.ui.component.player.component.applemusic.AppleMusicPlayerPage
+import com.ljyh.mei.ui.component.player.component.applemusic.NarrowLandscapePlayer
+import com.ljyh.mei.ui.component.player.component.classic.component.Cover
 import com.ljyh.mei.ui.component.player.MiniPlayer
 import com.ljyh.mei.ui.component.player.component.FluidBackground
 import com.ljyh.mei.ui.component.player.overlay.PlayerOverlayHandler
@@ -64,14 +67,18 @@ fun ClassicPlayer(
 
     val playerStyle by rememberEnumPreference(PlayerStyleKey, PlayerStyle.AppleMusic)
     val sheetLayers = LocalPlayerSheet.current
+    val expandPlayer: () -> Unit = { sheetLayers?.expand() }
     val scope = rememberCoroutineScope()
     var pendingExpansion by remember { mutableStateOf<Job?>(null) }
+    var narrowPage by remember { mutableStateOf(AppleMusicPlayerPage.Artwork) }
 
     fun openLandscapeDetail(queueSelected: Boolean) {
+        if (sheetLayers?.isTransitioning == true) return
         val previousBounds = sheetLayers?.fullArtworkBounds
         val needsArtworkPlacement = device.isTablet && playerStyle == PlayerStyle.AppleMusic &&
             !state.isExpanded && !stateContainer.landscapeDetailVisible.value &&
             previousBounds?.isUsable() == true
+        narrowPage = if (queueSelected) AppleMusicPlayerPage.Queue else AppleMusicPlayerPage.Lyrics
         stateContainer.landscapeQueueSelected.value = queueSelected
         stateContainer.landscapeDetailVisible.value = true
         if (pendingExpansion?.isActive == true) return
@@ -81,10 +88,10 @@ fun ClassicPlayer(
                 // its artwork. A frame delay alone does not acknowledge new geometry.
                 snapshotFlow { sheetLayers!!.fullArtworkBounds }
                     .first { it != previousBounds }
-                state.expandSoft()
+                expandPlayer()
             }
         } else {
-            state.expandSoft()
+            expandPlayer()
         }
     }
     val openLandscapeLyrics: () -> Unit = { openLandscapeDetail(queueSelected = false) }
@@ -114,7 +121,7 @@ fun ClassicPlayer(
             stateContainer.playerConnection.player.stop()
             stateContainer.playerConnection.player.clearMediaItems()
         },
-        onHorizontalSwipe = { direction ->
+        onHorizontalSwipe = if (state.isCollapsed) null else { direction ->
             when (direction) {
                 HorizontalSwipeDirection.Left -> stateContainer.playerConnection.seekToNext()
                 HorizontalSwipeDirection.Right -> stateContainer.playerConnection.seekToPrevious()
@@ -137,9 +144,9 @@ fun ClassicPlayer(
                 backdrop = collapsedBackdrop,
                 compactProgress = compactMiniPlayerProgress,
                 gestureModifier = gestures,
-                onClick = state::expandSoft,
+                onClick = expandPlayer,
                 onMoreClick = overlayHandler::showMoreAction,
-                onLyricsClick = if (device.isLandscape) openLandscapeLyrics else state::expandSoft,
+                onLyricsClick = if (device.isLandscape) openLandscapeLyrics else expandPlayer,
                 onQueueClick = if (device.isLandscape) openLandscapeQueue else overlayHandler::showPlaylist,
             )
         }
@@ -163,7 +170,23 @@ fun ClassicPlayer(
             when (layoutMode) {
                 PlayerLayoutMode.PhonePortrait -> ClassicPhoneLayout(stateContainer, overlayHandler)
                 PlayerLayoutMode.Tablet -> ClassicTabletLayout(stateContainer, overlayHandler, queueBackdrop)
-                PlayerLayoutMode.ImmersiveLandscape -> ClassicImmersiveLayout(stateContainer, overlayHandler, queueBackdrop)
+                PlayerLayoutMode.ImmersiveLandscape -> if (playerStyle == PlayerStyle.AppleMusic) {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        io.github.neoruaa.glasmio.glass.LocalGlassBackdrop provides queueBackdrop,
+                        io.github.neoruaa.glasmio.glass.LocalBlurBackdrop provides queueBackdrop,
+                    ) {
+                        NarrowLandscapePlayer(stateContainer, overlayHandler, narrowPage,
+                            active = state.isContentVisible,
+                            onPageSelected = { narrowPage = it },
+                            artwork = { artworkModifier ->
+                                mediaMetadata?.let { track ->
+                                    Cover(stateContainer.playerConnection, track, isPlaying, artworkModifier,
+                                        pausedScale = 0.95f,
+                                        onClick = { narrowPage = AppleMusicPlayerPage.Artwork })
+                                }
+                            })
+                    }
+                } else ClassicImmersiveLayout(stateContainer, overlayHandler, queueBackdrop)
             }
         }
 

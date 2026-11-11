@@ -130,13 +130,16 @@ class PlayerLyricsRenderingTest {
     fun primaryCenterMatchesWrappedTextWithoutIncludingTranslation() {
         val line = SyncedLine("Primary lyric wrapping across several lines", "Translation\nSecond translation line", 1_000, 5_000)
         var measuredCenter = 0f
+        var measuredTop = 0f
         compose.setContent {
             MaterialTheme {
                 val density = LocalDensity.current
                 val measurer = rememberTextMeasurer()
                 val style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                measuredCenter = mainLyricCenterOffset(line, false, style, false,
+                measuredCenter = mainLyricAnchorOffset(line, false, style, false,
                     with(density) { 180.dp.roundToPx() }, measurer, density)
+                measuredTop = mainLyricAnchorOffset(line, false, style, false,
+                    with(density) { 180.dp.roundToPx() }, measurer, density, anchorFraction = 0f)
                 Box(Modifier.width(180.dp).testTag("CenteredLyricRow")) {
                     com.mocharealm.accompanist.lyrics.ui.composable.lyrics.SyncedLineText(
                         line = line, isLineRtl = false, textStyle = style.copy(lineHeight = 1.2.em),
@@ -148,6 +151,7 @@ class PlayerLyricsRenderingTest {
         val row = compose.onNodeWithTag("CenteredLyricRow").fetchSemanticsNode().boundsInRoot
         val primary = compose.onNodeWithText(line.content).fetchSemanticsNode().boundsInRoot
         assertEquals(primary.center.y - row.top, measuredCenter, 1f)
+        assertEquals(primary.top - row.top, measuredTop, 1f)
         assertTrue(primary.height < row.height)
     }
     private val clickedLine = AtomicReference<ISyncedLine>()

@@ -38,14 +38,20 @@ internal fun appleMusicPlaybackSpec(isPlaying: Boolean) = if (isPlaying) {
 }
 
 @Composable
-internal fun rememberAppleMusicPlaybackScale(isPlaying: Boolean, expanded: Boolean): State<Float> {
+internal fun rememberAppleMusicPlaybackScale(
+    isPlaying: Boolean,
+    expanded: Boolean,
+    pausedScale: Float = 0.75f,
+): State<Float> {
     // Normalize the motion so Flamingo's completion threshold survives our smaller size change.
     val pausedFraction = animateFloatAsState(
         targetValue = if (isPlaying) 0f else 1f,
         animationSpec = if (expanded) appleMusicPlaybackSpec(isPlaying) else snap(),
         label = "AppleMusicPlaybackFraction",
     )
-    return remember(pausedFraction) { derivedStateOf { 1f - 0.25f * pausedFraction.value } }
+    return remember(pausedFraction, pausedScale) {
+        derivedStateOf { 1f - (1f - pausedScale) * pausedFraction.value }
+    }
 }
 
 @Composable

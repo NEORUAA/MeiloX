@@ -151,7 +151,7 @@ internal fun PlayerProgressSection(
             onQualityMenuVisibilityChanged, viewportBounds = viewportBounds)
     } else {
         PlayerProgressSlider(currentPosition, currentDuration, isPlaying, seek, modifier,
-            onQualityMenuVisibilityChanged, onTrackTopChanged = onProgressTrackTopChanged,
-            viewportBounds = viewportBounds)
+            onQualityMenuVisibilityChanged, edgeToEdgeTrack = horizontalPadding != null,
+            onTrackTopChanged = onProgressTrackTopChanged, viewportBounds = viewportBounds)
     }
 }

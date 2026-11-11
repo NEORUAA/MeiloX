@@ -70,6 +70,7 @@ fun PlayerProgressSlider(
     onPositionChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onQualityMenuVisibilityChanged: (Boolean) -> Unit = {},
+    edgeToEdgeTrack: Boolean = false,
     onTrackTopChanged: ((Float) -> Unit)? = null,
     viewportBounds: Rect? = null,
 ) {
@@ -170,7 +171,7 @@ fun PlayerProgressSlider(
                 // 如果你想要一个光标，可以在这里画。
                 // 安卓原生波浪条通常末端是一条竖线。
                 // 这里我们做一个透明的占位，把绘制逻辑统一放到 track 里
-                Spacer(Modifier.size(1.dp))
+                Spacer(Modifier.size(if (edgeToEdgeTrack) 0.dp else 1.dp))
             },
 
             // 自定义轨道绘制
