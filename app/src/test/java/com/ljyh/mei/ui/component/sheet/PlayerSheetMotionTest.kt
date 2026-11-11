@@ -26,6 +26,19 @@ class PlayerSheetMotionTest {
     private val mini = Rect(12f, 700f, 388f, 748f)
     private val page = Rect(0f, 0f, 400f, 800f)
 
+    @Test fun coverSwipeMustStartInsideAnEnabledVisibleArtworkViewport() {
+        val artwork = Rect(40f, 60f, 240f, 260f)
+        val clip = Rect(0f, 100f, 300f, 300f)
+        val inside = androidx.compose.ui.geometry.Offset(100f, 150f)
+        assertTrue(playerCoverSwipeStartsInside(true, inside, artwork, clip, 1f))
+        assertFalse(playerCoverSwipeStartsInside(false, inside, artwork, clip, 1f))
+        assertFalse(playerCoverSwipeStartsInside(true, inside, artwork, clip, 0f))
+        assertFalse(playerCoverSwipeStartsInside(true, inside, Rect.Zero, null, 1f))
+        assertFalse(playerCoverSwipeStartsInside(true, androidx.compose.ui.geometry.Offset(100f, 80f), artwork, clip, 1f))
+        assertFalse(playerCoverSwipeStartsInside(true, androidx.compose.ui.geometry.Offset(260f, 150f), artwork, clip, 1f))
+        assertFalse(playerCoverSwipeStartsInside(true, androidx.compose.ui.geometry.Offset(100f, 350f), artwork, clip, 1f))
+    }
+
     @Test fun landscapeContentKeepsItsFullSizeAndFollowsTheShellTopLeftThroughoutMotion() {
         val host = Rect(20f, 30f, 820f, 430f)
         val source = Rect(40f, 350f, 800f, 414f)

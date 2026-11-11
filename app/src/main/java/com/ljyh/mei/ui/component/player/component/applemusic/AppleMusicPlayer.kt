@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import com.ljyh.mei.ui.component.sheet.LocalPlayerSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -173,8 +174,14 @@ fun AppleMusicPlayer(
     val lyricLine by remember { derivedStateOf { stateContainer.lyricLine } }
     val isLiked by stateContainer.isLiked
     val canLike by stateContainer.canLike
-    val sheetExpanded by remember(state) { derivedStateOf { state.isExpanded } }
-    val sheetContentVisible by remember(state) { derivedStateOf { state.isContentVisible } }
+    val sheetLayers = LocalPlayerSheet.current
+    val expandPlayer: () -> Unit = { sheetLayers?.expand() }
+    val sheetExpanded by remember(state, sheetLayers) {
+        derivedStateOf { state.isExpanded && sheetLayers?.isTransitioning != true }
+    }
+    val sheetContentVisible by remember(state, sheetLayers) {
+        derivedStateOf { state.isContentVisible || sheetLayers?.isTransitioning == true }
+    }
 
     // --- Apple Music 特定的 LaunchedEffect ---
     BackHandler(enabled = sheetExpanded && showDetail) {
@@ -390,7 +397,7 @@ fun AppleMusicPlayer(
                 stateContainer.playerConnection.player.stop()
                 stateContainer.playerConnection.player.clearMediaItems()
             },
-            onHorizontalSwipe = { direction ->
+            onHorizontalSwipe = if (state.isCollapsed) null else { direction ->
                 if (!sheetExpanded) {
                     when (direction) {
                         HorizontalSwipeDirection.Left -> stateContainer.playerConnection.seekToNext()
@@ -416,7 +423,7 @@ fun AppleMusicPlayer(
                     backdrop = collapsedBackdrop,
                     compactProgress = compactMiniPlayerProgress,
                     gestureModifier = gestures,
-                    onClick = state::expandSoft,
+                    onClick = expandPlayer,
                 )
             }
         ) {

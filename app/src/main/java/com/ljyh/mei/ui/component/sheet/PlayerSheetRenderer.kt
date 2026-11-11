@@ -10,7 +10,8 @@ import android.view.RoundedCorner
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -70,6 +71,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
@@ -108,7 +111,10 @@ internal class PlayerSheetLayers(
     val fullContent: GraphicsLayer,
     private val scope: CoroutineScope,
 ) {
+    val trackSwipe = com.ljyh.mei.ui.component.player.PlayerTrackSwipeState(scope)
     private val motionPath = PlayerSheetMotionPath(state.isExpanded)
+    var coverSwipeEnabled by mutableStateOf(false)
+    var metadataSwipeActive by mutableStateOf(false)
     private var hostDensity by mutableStateOf(1f)
     private var closingDrag by mutableStateOf(false)
     private val release = PlayerSheetRelease()
@@ -143,6 +149,7 @@ internal class PlayerSheetLayers(
 
     fun dispose() {
         releaseJob?.cancel()
+        trackSwipe.dispose()
     }
 
     private fun baseMotionFrame(progress: Float, closing: Boolean) = PlayerSheetMotionFrame(
@@ -504,27 +511,72 @@ private fun Modifier.sheetGestures(
     state: GlasmioBottomSheetState,
     layers: PlayerSheetLayers,
     onHorizontalSwipe: ((HorizontalSwipeDirection) -> Unit)?,
-): Modifier = observePressHighlight(layers).pointerInput(state, onHorizontalSwipe) {
-    if (onHorizontalSwipe != null) {
-        val tracker = VelocityTracker()
-        detectHorizontalDragGestures(
-            onDragStart = { tracker.resetTracking() },
-            onHorizontalDrag = { change, _ -> tracker.addPointerInputChange(change) },
-            onDragEnd = {
-                val velocity = tracker.calculateVelocity().x
-                if (velocity > 500f) onHorizontalSwipe(HorizontalSwipeDirection.Right)
-                if (velocity < -500f) onHorizontalSwipe(HorizontalSwipeDirection.Left)
-            },
-        )
-    }
-}.pointerInput(state) {
+): Modifier {
+    val connection = com.ljyh.mei.ui.local.LocalPlayerConnection.current
+    val haptics = LocalHapticFeedback.current
+    val coordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+    return onGloballyPositioned { coordinates.value = it }.observePressHighlight(layers)
+        .pointerInput(state, onHorizontalSwipe, connection, layers.coverSwipeEnabled, haptics) {
+        if (onHorizontalSwipe == null || !layers.coverSwipeEnabled || connection == null) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            fun rootPosition(position: Offset) = coordinates.value?.takeIf { it.isAttached }?.localToRoot(position)
+            val origin = rootPosition(down.position) ?: return@awaitEachGesture
+            if (layers.metadataSwipeActive || layers.isTransitioning || !playerCoverSwipeStartsInside(
+                    layers.coverSwipeEnabled, origin, layers.targetArtwork,
+                    layers.targetArtworkClipBounds, layers.targetArtworkOpacity,
+                )) return@awaitEachGesture
+            val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                if (!layers.metadataSwipeActive && !layers.isTransitioning) change.consume()
+            } ?: return@awaitEachGesture
+            val metadata = connection.mediaMetadata.value ?: return@awaitEachGesture
+            val width = layers.targetArtwork.width.roundToInt().coerceAtLeast(1)
+            val tracker = VelocityTracker()
+            tracker.addPosition(down.uptimeMillis, origin)
+            val startPosition = rootPosition(start.position) ?: return@awaitEachGesture
+            tracker.addPosition(start.uptimeMillis, startPosition)
+            var distance = startPosition.x - origin.x
+            layers.trackSwipe.begin(connection, metadata)
+            var thresholdReached = false
+            fun updateSwipe() {
+                layers.trackSwipe.drag(distance / width)
+                val direction = if (distance < 0f) 1 else -1
+                val reached = kotlin.math.abs(layers.trackSwipe.fraction) >= 0.5f &&
+                    layers.trackSwipe.captured?.getOrNull(direction + 1) != null
+                if (reached && !thresholdReached) {
+                    haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                }
+                thresholdReached = reached
+            }
+            updateSwipe()
+            var completed = false
+            try {
+                val released = horizontalDrag(start.id) { change ->
+                    val position = rootPosition(change.position) ?: return@horizontalDrag
+                    tracker.addPosition(change.uptimeMillis, position)
+                    distance = position.x - origin.x
+                    updateSwipe()
+                    change.consume()
+                }
+                if (released) {
+                    completed = true
+                    layers.trackSwipe.settle(connection, com.ljyh.mei.ui.component.player.miniPlayerSwipeDirection(
+                        distance, width, tracker.calculateVelocity().x,
+                    ))
+                }
+            } finally {
+                if (!completed) layers.trackSwipe.settle(connection, 0)
+            }
+        }
+}.pointerInput(state, layers.metadataSwipeActive) {
+    if (layers.metadataSwipeActive) return@pointerInput
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         var firstDelta = 0f
         val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
             // A horizontal child keeps events available to native glass feedback.
             // Claim vertical slop only while the sheet still owns this gesture.
-            if (!layers.isTransitioning) {
+            if (!layers.metadataSwipeActive && !layers.isTransitioning) {
                 firstDelta = overSlop
                 change.consume()
             }
@@ -557,6 +609,8 @@ private fun Modifier.sheetGestures(
             }
         }
     }
+}
+
 }
 
 /** Clip hidden controls' hit testing as well as their drawing; consuming a down is too late

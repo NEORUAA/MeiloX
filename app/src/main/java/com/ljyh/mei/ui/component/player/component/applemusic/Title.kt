@@ -1,5 +1,6 @@
 package com.ljyh.mei.ui.component.player.component.applemusic
 
+import com.ljyh.mei.ui.component.player.PlayerMetadataTrackSwipe
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +79,7 @@ fun Title(
     ) else null
     val artistStyle = subTitleStyle.copy(shadow = shadowStyle)
     val artistColor = Color.White.copy(alpha = 0.4f)
+    var metadataWidth by remember { mutableIntStateOf(0) }
 
     Row(
         modifier = modifier.onGloballyPositioned(onRowPositioned),
@@ -84,7 +89,7 @@ fun Title(
         Column(
             modifier = Modifier.weight(1f)
                 .padding(end = if (showLikeButton) 0.dp else 2.dp)
-                .onSizeChanged(onTextSizeChanged)
+                .onSizeChanged { metadataWidth = it.width; onTextSizeChanged(it) }
                 .then(textModifier)
                 .onGloballyPositioned(onTextPositioned)
                 .clickable(
@@ -93,28 +98,30 @@ fun Title(
                     enabled = enabled,
                     onClick = onTitleClick,
                 ),
-            horizontalAlignment = Alignment.Start
         ) {
             PlayerTitleWithMode(modeLabel, artistStyle, artistColor) { titleModifier ->
+                PlayerMetadataTrackSwipe(modifier = titleModifier, edgeInset = marqueeEdgeWidth, enabled = enabled, pageWidth = metadataWidth) { track, allowMarquee ->
+                    AppleMusicMarqueeText(
+                        text = track?.title ?: title,
+                        style = titleStyle.copy(
+                            shadow = shadowStyle,
+                            fontWeight = titleStyle.fontWeight ?: FontWeight.Medium,
+                        ),
+                        color = Color.White,
+                        edgeWidth = marqueeEdgeWidth,
+                        enabled = marqueeEnabled && allowMarquee,
+                    )
+                }
+            }
+            PlayerMetadataTrackSwipe(edgeInset = marqueeEdgeWidth, enabled = enabled, pageWidth = metadataWidth) { track, allowMarquee ->
                 AppleMusicMarqueeText(
-                    text = title,
-                    style = titleStyle.copy(
-                        shadow = shadowStyle,
-                        fontWeight = titleStyle.fontWeight ?: FontWeight.Medium,
-                    ),
-                    color = Color.White,
+                    text = track?.artists?.joinToString { it.name } ?: subTitle,
+                    style = artistStyle,
+                    color = artistColor,
                     edgeWidth = marqueeEdgeWidth,
-                    enabled = marqueeEnabled,
-                    modifier = titleModifier,
+                    enabled = marqueeEnabled && allowMarquee,
                 )
             }
-            AppleMusicMarqueeText(
-                text = subTitle,
-                style = artistStyle,
-                color = artistColor,
-                edgeWidth = marqueeEdgeWidth,
-                enabled = marqueeEnabled,
-            )
         }
 
         Row(

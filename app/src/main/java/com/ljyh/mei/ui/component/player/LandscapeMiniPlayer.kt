@@ -93,7 +93,7 @@ internal fun LandscapeMiniPlayer(
     val stringNext = stringResource(R.string.player_next)
     val playPauseDescription = stringResource(if (playing) R.string.player_pause else R.string.player_play)
     val artwork = LocalPlayerArtwork.current
-    val transitioning by remember(sheet) { derivedStateOf { sheet?.state?.isTransitioning == true } }
+    val transitioning by remember(sheet) { derivedStateOf { sheet?.isTransitioning == true } }
     Box(
         modifier.widthIn(max = 768.dp).fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
@@ -219,20 +219,20 @@ internal fun LandscapeMiniPlayer(
                             variationSettings = FontVariation.Settings(FontVariation.weight(500))))
                     }
                     val titleStyle = IosTypography.body.copy(
-                        fontSize = 14.sp, fontWeight = FontWeight.Medium, fontFamily = titleFont,
+                        fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFamily = titleFont,
                     )
                     val artistStyle = IosTypography.body.copy(fontSize = 14.sp, fontWeight = FontWeight.Normal)
-                    if (track != null) {
+                    if (track != null) MiniPlayerTrackSwipe(connection, track) { visibleTrack, allowMarquee ->
                         AppleMusicMarqueeText(
-                            text = track.title, style = titleStyle,
-                            color = colors.content, edgeWidth = 8.dp,
-                            enabled = sheet?.state?.isCollapsed != false,
+                            text = visibleTrack.title, style = titleStyle,
+                            color = colors.content, edgeWidth = if (allowMarquee) 8.dp else 0.dp,
+                            enabled = allowMarquee && sheet?.state?.isCollapsed != false,
                         )
-                        val artists = track.artists.joinToString { it.name }
+                        val artists = visibleTrack.artists.joinToString { it.name }
                         if (artists.isNotBlank()) AppleMusicMarqueeText(
                             text = artists, style = artistStyle,
-                            color = colors.content, edgeWidth = 8.dp,
-                            enabled = sheet?.state?.isCollapsed != false,
+                            color = colors.content, edgeWidth = if (allowMarquee) 8.dp else 0.dp,
+                            enabled = allowMarquee && sheet?.state?.isCollapsed != false,
                         )
                     } else Text(stringResource(R.string.landscape_player_not_playing), style = titleStyle,
                         color = colors.secondaryContent, maxLines = 1)

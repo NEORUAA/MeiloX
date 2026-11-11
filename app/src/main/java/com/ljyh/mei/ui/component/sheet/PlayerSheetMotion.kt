@@ -50,6 +50,15 @@ internal fun playerContentAlpha(progress: Float) = easeInCubic(
     (progress - PlayerContentAppearStart) / (PlayerContentAppearEnd - PlayerContentAppearStart),
 )
 
+internal fun playerCoverSwipeStartsInside(
+    enabled: Boolean,
+    position: Offset,
+    artwork: Rect,
+    clip: Rect?,
+    opacity: Float,
+): Boolean = enabled && opacity > 0f && !artwork.isEmpty && artwork.contains(position) &&
+    (clip == null || clip.contains(position))
+
 /** Keep the page rigid until the user releases the drag. */
 internal fun playerClosingDragFrame(host: Rect, progress: Float, travel: Float) = PlayerSheetMotionFrame(
     host.translate(Offset(0f, (1f - progress.coerceIn(0f, 1f)) * travel)), 1f,

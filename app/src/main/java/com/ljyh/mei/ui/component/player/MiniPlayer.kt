@@ -214,7 +214,7 @@ private fun MiniPlayerContent(
     val contentProgress = chromeMotion?.contentProgress ?: compactProgress
     val chromeHint = LocalMiniPlayerChromeHint.current
     val sheetTransitioning by remember(sheet) {
-        derivedStateOf { sheet?.state?.isTransitioning == true }
+        derivedStateOf { sheet?.isTransitioning == true }
     }
     val playerConnection = LocalPlayerConnection.current ?: return
     val isPlaying by playerConnection.isPlaying.collectAsState()
@@ -433,31 +433,35 @@ fun MiniMediaInfo(
             }
         }
 
-        Column(
-            verticalArrangement = Arrangement.spacedBy((-1).dp),
+        MiniPlayerTrackSwipe(
+            connection = checkNotNull(LocalPlayerConnection.current),
+            metadata = mediaMetadata,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 4.dp, end = 6.dp),
-        ) {
-            AppleMusicMarqueeText(
-                text = mediaMetadata.title,
-                style = LocalTextStyle.current.copy(
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                edgeWidth = 8.dp,
-                enabled = marqueeEnabled,
-            )
-            AppleMusicMarqueeText(
-                text = mediaMetadata.artists.joinToString { it.name },
-                style = LocalTextStyle.current.copy(
-                    fontSize = 11.sp,
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                edgeWidth = 8.dp,
-                enabled = marqueeEnabled,
-            )
+        ) { track, allowMarquee ->
+            Column(verticalArrangement = Arrangement.spacedBy((-1).dp)) {
+                AppleMusicMarqueeText(
+                    text = track.title,
+                    style = LocalTextStyle.current.copy(
+                        fontSize = 13.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    edgeWidth = if (allowMarquee) 8.dp else 0.dp,
+                    enabled = marqueeEnabled && allowMarquee,
+                )
+                AppleMusicMarqueeText(
+                    text = track.artists.joinToString { it.name },
+                    style = LocalTextStyle.current.copy(
+                        fontSize = 11.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    edgeWidth = if (allowMarquee) 8.dp else 0.dp,
+                    enabled = marqueeEnabled && allowMarquee,
+                )
+            }
         }
     }
 }

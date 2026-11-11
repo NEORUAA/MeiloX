@@ -5,6 +5,7 @@ import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.media3.common.C
+import com.ljyh.mei.ui.component.player.miniPlayerSwipeDirection
 import com.ljyh.mei.ui.component.player.state.playerProgressDuration
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -14,6 +15,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppleMusicPlaybackMotionTest {
+    @Test fun miniMetadataSwipeUsesVelocityOrHalfTheActualTitleViewport() {
+        assertEquals(0, miniPlayerSwipeDirection(-99f, 200, 0f))
+        assertEquals(1, miniPlayerSwipeDirection(-100f, 200, 0f))
+        assertEquals(-1, miniPlayerSwipeDirection(100f, 200, 0f))
+        assertEquals(0, miniPlayerSwipeDirection(-149f, 300, 0f))
+        assertEquals(1, miniPlayerSwipeDirection(-150f, 300, 0f))
+        assertEquals(1, miniPlayerSwipeDirection(-5f, 200, -500f))
+        assertEquals(-1, miniPlayerSwipeDirection(5f, 200, 500f))
+        assertEquals(-1, miniPlayerSwipeDirection(-120f, 200, 600f))
+        assertEquals(0, miniPlayerSwipeDirection(-50f, 0, -800f))
+    }
+
     @Test fun progressUsesMetadataUntilTheCurrentSourceReportsItsDuration() {
         assertEquals(222_000L, playerProgressDuration(C.TIME_UNSET, 222_000L))
         assertEquals(222_000L, playerProgressDuration(0L, 222_000L))
