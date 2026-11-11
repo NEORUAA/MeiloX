@@ -537,7 +537,8 @@ class SourceContentViewModel internal constructor(
     fun pagedQueue(value: SourceContentRequest, initialTracks: List<Track>, startIndex: Int, title: String?): Queue? {
         val current = state.value
         val tracks = current.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
-        if (tracks.isEmpty() || startIndex !in tracks.indices || initialTracks.map { it.ref } != tracks.map { it.ref } ||
+        if (tracks.isEmpty() || startIndex !in tracks.indices || initialTracks.size != tracks.size ||
+            tracks.indices.any { initialTracks[it].ref != tracks[it].ref } ||
             provider(current.providerId) !== displayedProvider || provider(current.providerId)?.version != current.providerVersion) return null
         val total = when (val detail = current.detail) {
             is SourceItem.PlaylistItem -> detail.playlist.trackCount

@@ -750,7 +750,7 @@ fun SourceArtistCatalogScreen(ref: ArtistRef, albums: Boolean, viewModel: Source
             }
             sourceDetailPagingStatus(state, viewModel::refresh, {
                 if (query.text.isBlank()) viewModel.loadMore() else viewModel.continueArtistCatalogSearch()
-            }, automatic = query.text.isBlank())
+            }, automatic = false)
         }
         if (!state.loading && state.error == null && (if (albums) records.isEmpty() && !state.albumsHasMore else tracks.isEmpty() && !state.hasMore)) {
             item("artist-catalog-empty") {

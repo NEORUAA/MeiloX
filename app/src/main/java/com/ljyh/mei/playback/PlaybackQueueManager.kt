@@ -103,6 +103,8 @@ class PlaybackQueueManager(
     private var pendingLocalQueuePreviousState: QueueState? = null
     private var queueSelectionJob: Job? = null
     private var sourceContentQueue: SourceContentQueue? = null
+    private var sourceContentWindowStart = 0
+    private var sourceContentWindowEnd = 0
     private var sourceContentPageJob: Job? = null
     private var sourceContentWatchJob: Job? = null
     private var sourceContentRestoreJob: Job? = null
@@ -953,7 +955,7 @@ class PlaybackQueueManager(
                         null
                     }
                     status = if (refs == null) {
-                        if (preferCloud) status else queue.loadAll()
+                        if (preferCloud || queue.playlistSource == null) status else queue.loadAll()
                     } else {
                         val selected = status.ids.getOrNull(status.mediaItemIndex)?.first
                         val cached = status.ids.toMap()
@@ -1015,10 +1017,15 @@ class PlaybackQueueManager(
                 pendingLocalQueueGeneration = null
                 pendingLocalQueuePreviousState = null
 
-                val mediaItems = prefilled ?: allIds.mapIndexed { index, item ->
+                val sourceWindow = if (queue is SourceContentQueue && !startInShuffleMode) {
+                    sourceContentInitialWindow(allIds.size, startIndex)
+                } else 0 until allIds.size
+                val mediaItems = prefilled ?: sourceWindow.map { index ->
+                    val item = allIds[index]
                     if (index == startIndex) selectedItem
                     else item.second ?: createPlaceholder(item.first)
                 }
+                val mediaStartIndex = startIndex - sourceWindow.first
 
                 // 2. 停止并重置
                 cancelSourceContentQueue()
@@ -1037,7 +1044,9 @@ class PlaybackQueueManager(
                 _isShuffleModeEnabled.value = false
 
                 // 设置列表并直接跳转 此时 shuffle 是 false，所以 status.mediaItemIndex 绝对对应 list 里的第 N 个
-                player.setMediaItems(mediaItems, startIndex, status.position.toLong())
+                sourceContentWindowStart = sourceWindow.first
+                sourceContentWindowEnd = sourceWindow.last + 1
+                player.setMediaItems(mediaItems, mediaStartIndex, status.position.toLong())
                 playlistSource = queue.playlistSource
                 if (identityOnlyShuffle) (queue as SourceContentQueue).freezePagination()
                 (queue as? SourceContentQueue)?.let(::attachSourceContentQueue)
@@ -1098,6 +1107,7 @@ class PlaybackQueueManager(
 
         // 基础元数据加载逻辑
         checkAndLoadMetadata()
+        scope.launch(Dispatchers.Main) { loadSourceContentPreviousPageIfNeeded() }
         loadSourceContentPageIfNeeded()
 
         // --- 新增 FM 边界检查 ---
@@ -1179,7 +1189,7 @@ class PlaybackQueueManager(
                 pageJob?.cancelAndJoin()
                 if (sourceContentPageJob === pageJob) sourceContentPageJob = null
                 val refs = queue?.let { sourceShuffleIds(it) }
-                val status = if (refs == null && queue != null && !queue.hasCloudOrder) queue.loadAll() else null
+                val status = if (refs == null && queue != null && !queue.hasCloudOrder && queue.playlistSource != null) queue.loadAll() else null
                 if (queue != null && !queue.isSourceCurrent()) throw SourceException(SourceErrorCode.AUTH_EXPIRED)
                 currentCoroutineContext().ensureActive()
                 if (released || generation != localShuffleGeneration || buildGeneration != queueBuildGeneration ||
@@ -1273,8 +1283,10 @@ class PlaybackQueueManager(
     private fun loadSourceContentPageIfNeeded() {
         val queue = sourceContentQueue ?: return
         if (released || isFmMode || localShuffleJob?.isActive == true || serverShuffleJob?.isActive == true ||
-            sourceContentPageJob?.isActive == true ||
-            !queue.hasNextPage() && queue.loadedCount <= player.mediaItemCount) return
+            sourceContentPageJob?.isActive == true) return
+        val loadedWindowEnd = sourceContentWindowEnd.takeIf { it > 0 } ?: player.mediaItemCount
+        val needsRemotePage = loadedWindowEnd >= queue.loadedCount && queue.hasNextPage()
+        if (!needsRemotePage && loadedWindowEnd >= queue.loadedCount) return
         val order = player.playbackOrderIndices()
         val current = order.indexOf(player.currentMediaItemIndex)
         if (current < 0 || order.size - current > 3) return
@@ -1283,12 +1295,13 @@ class PlaybackQueueManager(
             var appended = false
             try {
                 val firstNewIndex = player.mediaItemCount
-                if (queue.loadedCount <= firstNewIndex) {
+                val firstSourceIndex = sourceContentWindowEnd.takeIf { it > 0 } ?: firstNewIndex
+                if (queue.loadedCount <= firstSourceIndex) {
                     if (queue.nextPage() !is Queue.Result.Success) return@launch
                 }
                 currentCoroutineContext().ensureActive()
                 if (generation != queueBuildGeneration || sourceContentQueue !== queue || isFmMode) return@launch
-                val additions = (firstNewIndex until minOf(queue.loadedCount, firstNewIndex + queue.playbackPageSize)).mapNotNull { index ->
+                val additions = (firstSourceIndex until minOf(queue.loadedCount, firstSourceIndex + queue.playbackPageSize)).mapNotNull { index ->
                     (queue.getItemAt(index) as? Queue.Result.Success)?.data?.let { item ->
                         item.second ?: createPlaceholder(item.first)
                     }
@@ -1304,6 +1317,7 @@ class PlaybackQueueManager(
                     player.currentMediaItemIndex == firstAddition - 1 && player.playWhenReady
                 val append = {
                     player.addMediaItems(additions)
+                    sourceContentWindowEnd = firstSourceIndex + additions.size
                     if (resumeAtAddition) {
                         player.seekToDefaultPosition(firstAddition)
                         player.prepare()
@@ -1329,6 +1343,26 @@ class PlaybackQueueManager(
         sourceContentPageJob?.start()
     }
 
+    private suspend fun loadSourceContentPreviousPageIfNeeded() {
+        val queue = sourceContentQueue ?: return
+        if (released || player.shuffleModeEnabled || sourceContentWindowStart <= 0 ||
+            player.currentMediaItemIndex > 2) return
+        val firstSourceIndex = maxOf(0, sourceContentWindowStart - queue.playbackPageSize)
+        val additions = (firstSourceIndex until sourceContentWindowStart).mapNotNull { index ->
+            (queue.getItemAt(index) as? Queue.Result.Success)?.data?.let { item ->
+                item.second ?: createPlaceholder(item.first)
+            }
+        }
+        if (additions.isEmpty()) return
+        val prepend = {
+            player.addMediaItems(0, additions)
+            sourceContentWindowStart = firstSourceIndex
+        }
+        val stablePlayer = player as? StableDeckPlayer
+        if (stablePlayer != null) stablePlayer.withInternalQueueUpdate(prepend) else prepend()
+        checkAndLoadMetadata()
+    }
+
     private fun cancelSourceContentQueue() {
         cancelLocalShuffle()
         sourceContentPageJob?.cancel()
@@ -1341,6 +1375,8 @@ class PlaybackQueueManager(
         pendingSourceContentRefs = null
         sourceContentQueue?.release()
         sourceContentQueue = null
+        sourceContentWindowStart = 0
+        sourceContentWindowEnd = 0
     }
 
     private fun attachSourceContentQueue(queue: SourceContentQueue) {
@@ -1678,6 +1714,16 @@ class PlaybackQueueManager(
         object Completed : QueueState()
         object Empty : QueueState()
     }
+}
+
+private const val SOURCE_CONTENT_INITIAL_WINDOW_SIZE = 48
+
+internal fun sourceContentInitialWindow(totalCount: Int, selectedIndex: Int): IntRange {
+    require(totalCount > 0 && selectedIndex in 0 until totalCount)
+    val size = minOf(totalCount, SOURCE_CONTENT_INITIAL_WINDOW_SIZE)
+    val first = (selectedIndex - SOURCE_CONTENT_INITIAL_WINDOW_SIZE / 4)
+        .coerceIn(0, (totalCount - size).coerceAtLeast(0))
+    return first until first + size
 }
 
 internal fun repairQueueAutoplayStartEntryId(

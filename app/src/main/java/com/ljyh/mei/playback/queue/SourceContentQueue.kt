@@ -195,7 +195,7 @@ class SourceContentQueue private constructor(
             }
         }
         return synchronized(lock) {
-            Queue.Status(title, itemsLocked(), startIndex).also { publishLoadedLocked(it.ids) }
+            Queue.Status(title, itemsLocked(startIndex), startIndex).also { publishLoadedLocked(it.ids) }
         }
     }
 
@@ -297,7 +297,7 @@ class SourceContentQueue private constructor(
             if (refs.isNotEmpty()) seenPages.add(refs)
             more = page.hasMore && page.items.isNotEmpty() &&
                 (page.nextCursor != null || knownTotalCount == null || tracks.size < knownTotalCount)
-            publishLoadedLocked(itemsLocked())
+            publishLoadedLocked(items)
             Queue.Result.Success(items.map { it.first })
         }
     }
@@ -462,8 +462,9 @@ class SourceContentQueue private constructor(
         } ?: Queue.Result.Error("Position $position out of bounds")
     }
 
-    private fun itemsLocked(): List<Pair<String, MediaItem?>> = tracks.map {
-        TrackRefCodec.mediaId(it.ref) to mediaItemFactory(it)
+    /** Keep queue admission proportional to the selected item. Remaining metadata hydrates on demand. */
+    private fun itemsLocked(metadataIndex: Int? = null): List<Pair<String, MediaItem?>> = tracks.mapIndexed { index, track ->
+        TrackRefCodec.mediaId(track.ref) to if (metadataIndex == null || metadataIndex == index) mediaItemFactory(track) else null
     }
 
     private fun publishLoadedLocked(items: List<Pair<String, MediaItem?>>) {

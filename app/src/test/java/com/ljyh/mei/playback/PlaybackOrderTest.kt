@@ -37,6 +37,13 @@ import org.junit.Test
 
 class PlaybackOrderTest {
     @Test
+    fun sourceContentInitialWindowKeepsArtistPlaybackBounded() {
+        assertEquals(0 until 48, sourceContentInitialWindow(942, 0))
+        assertEquals(459 until 507, sourceContentInitialWindow(942, 471))
+        assertEquals(0 until 10, sourceContentInitialWindow(10, 9))
+    }
+
+    @Test
     fun officialMobilePolicyKeepsAndroidAssignmentsDefaultsAndPresentInvalidValues() {
         fun json(value: String) = JsonParser.parseString(value).asJsonObject
         fun parent(group: String, config: String = "{}") = json("""{"code":200,"data":{"RandomPlaylist_Adjustment_Android":{"expGroupName":"$group","clientConfig":$config}}}""")
@@ -304,6 +311,28 @@ class PlaybackOrderTest {
         assertEquals(5, queue.loadedCount)
         assertFalse(queue.hasNextPage())
         assertEquals(1, provider.calls.size)
+    }
+
+    @Test
+    fun sourceQueueOnlyBuildsSelectedMetadataDuringInitialPlayback() = runBlocking {
+        val provider = ContentProvider()
+        val converted = mutableListOf<String>()
+        val tracks = (0 until 942).map { track("track-$it") }
+        val queue = SourceContentQueue(
+            SourceRouter(ProviderRegistry(listOf(provider))),
+            PlaylistRef(provider.id, "artist-songs"),
+            "Artist songs",
+            initialTracks = tracks,
+            startIndex = 471,
+            hasMore = false,
+            mediaItemFactory = { converted += it.ref.trackId; null },
+        )
+
+        val status = queue.getInitialStatus()
+
+        assertEquals(942, status.ids.size)
+        assertEquals("track-471", TrackRefCodec.decode(status.ids[471].first)?.trackId)
+        assertEquals(listOf("track-471"), converted)
     }
 
     @Test
