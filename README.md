@@ -44,18 +44,6 @@ MeiloX 是一个基于 [Mei](https://github.com/ljyh223/Mei) 改造的多音源�
 
 音源的导入、配置和切换方式见 [音源使用](docs/music-sources.md)。开发者可参考 [插件规范与 SDK](docs/source-plugin-spec.md) 和 [架构与兼容迁移](docs/multi-source-architecture.md)。
 
-## Build from source
-
-Use JDK 21 and Android SDK 37.0. Build with the latest Glasmio development source:
-
-```sh
-git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
-./gradlew -Pglasmio.source=true :app:assembleDebug
-```
-
-See [Glasmio integration](docs/glasmio-integration.md) for the owned renderer,
-navigation viewport binding, and native accessory motion used by the MiniPlayer.
-
 ## 歌词共享
 
 已接入 [Lyricon Provider](https://tomakino.github.io/lyricon/zh-cn/developer/provider/)、[SuperLyricApi](https://github.com/HChenX/SuperLyricApi) 和 [ColorOS Live Lyrics Bridge](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge) 接口，用于共享歌词、逐字时间、翻译及播放状态。
@@ -138,6 +126,24 @@ MeiloX 主体代码以 [GNU General Public License v3](LICENSE) 发布。MeiloX 
     <td><img src="./screenshot/2026-08-22/player_Screenshot_2026-08-22-10-21-10-403_com.neoruaa.meilox.jpg" width="200" alt="Player 05"></td>
   </tr>
 </table>
+
+## 从源码构建
+
+使用 JDK 21 和 Android SDK 37。默认从同级 `../Glasmio` 构建最新源码：
+
+```sh
+git clone https://github.com/NEORUAA/Glasmio.git ../Glasmio
+./gradlew :app:assembleDebug
+```
+
+需要使用最新已发布的 Maven 包时，可显式关闭源码替换：
+
+```sh
+./gradlew -Pglasmio.source=false -Pglasmio.version=0.1.3 :app:assembleDebug
+```
+
+Glasmio 的渲染器、导航视口绑定和 MiniPlayer 原生附件动画说明见
+[Glasmio 集成文档](docs/glasmio-integration.md)。
 
 ## 免责声明
 

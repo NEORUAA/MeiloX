@@ -185,10 +185,11 @@ ksp {
 }
 
 dependencies {
+    val glasmioVersion = providers.gradleProperty("glasmio.version").orElse("0.1.3")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("io.github.dokar3:quickjs-kt:1.0.18")
-    implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.1")
-    implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
+    implementation("io.github.neoruaa.glasmio:glasmio-scaffold:${glasmioVersion.get()}")
+    implementation("io.github.neoruaa.glasmio:glasmio-preference:${glasmioVersion.get()}")
 
     implementation(libs.oboe)
     implementation(libs.androidx.core.ktx)
