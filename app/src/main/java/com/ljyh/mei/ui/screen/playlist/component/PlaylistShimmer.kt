@@ -180,7 +180,13 @@ internal fun TrackItemShimmer(isTablet: Boolean, flatDetailStyle: Boolean = fals
         modifier = Modifier
             .fillMaxWidth()
             .then(if (flatDetailStyle) Modifier.heightIn(min = if (showArtwork) { 56.dp } else 52.dp) else Modifier)
-            .padding(vertical = if (flatDetailStyle) 4.dp else 10.dp, horizontal = if (flatDetailStyle) 0.dp else 16.dp),
+            .padding(
+                top = if (flatDetailStyle) 4.dp else 10.dp,
+                bottom = if (flatDetailStyle) 4.dp else 10.dp,
+                start = if (flatDetailStyle) 0.dp else 16.dp,
+                // Keep the portrait more-button offset inside the shimmer layer.
+                end = if (flatDetailStyle && !compactRows) 8.dp else if (flatDetailStyle) 0.dp else 16.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isTablet) {

@@ -497,4 +497,10 @@ private fun buildPlaylistMetadata(
     return listOfNotNull(songs, played).joinToString(" · ")
 }
 
-private fun formatCompactCount(value: Long): String = value.toString()
+internal fun formatCompactCount(value: Long): String = when {
+    value >= 100_000_000L ->
+        String.format(java.util.Locale.getDefault(), "%.1f亿", value / 100_000_000.0)
+    value >= 10_000L ->
+        String.format(java.util.Locale.getDefault(), "%.1f万", value / 10_000.0)
+    else -> value.toString()
+}

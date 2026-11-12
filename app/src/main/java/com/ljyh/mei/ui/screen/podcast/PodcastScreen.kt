@@ -86,6 +86,7 @@ import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistSurface
+import com.ljyh.mei.ui.screen.playlist.component.formatCompactCount
 import com.ljyh.mei.utils.rememberPreference
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -523,7 +524,7 @@ fun PodcastDetailScreen(
         hasLoadedContent = detail != null,
         listState = listState,
         headerMetadata = listOf(stringResource(R.string.podcast_program_count, count),
-            stringResource(R.string.song_wiki_play_count, (detail?.podcast?.playCount ?: 0).toString())).joinToString(" · "),
+            stringResource(R.string.song_wiki_play_count, formatCompactCount(detail?.podcast?.playCount ?: 0))).joinToString(" · "),
         onPlayAll = { play() }, onShufflePlay = { play(shuffle = true) },
         headerActionIcon = Icons.Default.Add,
         headerActionLabel = stringResource(if (detail?.podcast?.isSubscribed == true) R.string.detail_podcast_unsubscribe else R.string.podcast_subscribe),
