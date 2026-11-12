@@ -1025,6 +1025,7 @@ class MainActivity : ComponentActivity() {
                         LocalDatabase provides database,
                         LocalNavController provides navController,
                         LocalPlayerConnection provides playerConnection,
+                        LocalPlayerAwareWindowInsets provides windowsInsets,
                         LocalUserData provides userData,
                     ) {
                     GlasmioAdaptiveNavigationScaffold(
