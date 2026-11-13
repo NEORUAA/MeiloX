@@ -56,6 +56,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -1450,6 +1452,7 @@ class MainActivity : ComponentActivity() {
                                                         modifier = Modifier
                                                             .fillMaxSize()
                                                             .glasmioAdaptiveContent()
+                                                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                                                             .padding(top = windowsInsets.asPaddingValues().calculateTopPadding() + if (isLandscape) com.ljyh.mei.constants.LandscapeSearchTopPadding + 56.dp else 0.dp)
                                                             .padding(searchResultsBottomPadding),
                                                     )
@@ -1480,9 +1483,10 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .glasmioAdaptiveContent()
+                                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                                         .padding(horizontal = bottomNavigationHorizontalMargin)
                                         .then(if (isLandscape) Modifier
-                                            .padding(windowsInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal).asPaddingValues())
+                                            .padding(windowsInsets.only(WindowInsetsSides.Top).asPaddingValues())
                                             .padding(top = com.ljyh.mei.constants.LandscapeSearchTopPadding)
                                         else Modifier.padding(searchToolbarBottomPadding)
                                             .offset(y = searchToolbarVerticalOffset)),

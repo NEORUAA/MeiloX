@@ -8,12 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
@@ -201,7 +205,9 @@ fun CommentScreen(songId: String, viewModel: CommentViewModel = hiltViewModel())
             }
         }
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().glasmioAdaptiveContent().padding(horizontal = 20.dp)
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().glasmioAdaptiveContent()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(horizontal = 20.dp)
                 .padding(bottom = bottomPadding + 8.dp)
                 .onSizeChanged { composerHeight = with(density) { it.height.toDp() } },
             verticalArrangement = Arrangement.spacedBy(8.dp),
