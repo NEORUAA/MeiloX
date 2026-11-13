@@ -359,10 +359,17 @@ fun MeiloXPinnedListPage(
                     (bottomPaddingValues?.calculateBottomPadding() ?: 0.dp)
             }
         }
-        val listContent: @Composable () -> Unit = {
+        val listContent: @Composable (Boolean) -> Unit = { parentProvidesEdgeToEdge ->
             key(listState) {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
-                    contentPadding = listPadding, verticalArrangement = verticalArrangement,
+                LazyColumn(state = listState,
+                    // Expose cross-axis space for nested full-width horizontal rows; regular list
+                    // content keeps the safe area through contentPadding below.
+                    modifier = Modifier.fillMaxSize().then(
+                        if (parentProvidesEdgeToEdge) Modifier
+                        else Modifier.glasmioHorizontalEdgeToEdge(),
+                    ),
+                    contentPadding = glasmioHorizontalContentPadding(listPadding),
+                    verticalArrangement = verticalArrangement,
                 ) {
                     if (showTitle) item(key = "ios-large-title:$title") {
                         Column(Modifier.fillMaxWidth().graphicsLayer {
@@ -384,12 +391,17 @@ fun MeiloXPinnedListPage(
             }
         }
         if (onRefresh == null) {
-            listContent()
+            listContent(false)
         } else {
             val refreshState = rememberPullToRefreshState()
-            PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = onRefresh, state = refreshState) {
+            PullToRefreshBox(
+                modifier = Modifier.glasmioHorizontalEdgeToEdge(),
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+                state = refreshState,
+            ) {
                 Box(Modifier.fillMaxSize().pullToRefreshRebound(refreshState, isRefreshing)) {
-                    listContent()
+                    listContent(true)
                 }
             }
         }

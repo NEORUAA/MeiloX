@@ -80,6 +80,8 @@ import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.main.library.component.groupedLazyItems
@@ -266,8 +268,8 @@ private fun PodcastCategorySelector(
     onCategorySelected: (String?) -> Unit,
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+        contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = 16.dp)),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item(key = "podcast-category-recommended") {
@@ -328,8 +330,8 @@ private fun PodcastSection(
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         LazyRow(
-            modifier = Modifier.swipeBackExcluded(),
-            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+            modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+            contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = HomeRowHorizontalPadding)),
             horizontalArrangement = Arrangement.spacedBy(homeCardSpacing(isLandscape)),
         ) {
             items(podcasts, key = { it.id }) { podcast ->

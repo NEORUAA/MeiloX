@@ -54,6 +54,8 @@ import com.ljyh.mei.constants.HomeSongRowSpacing
 import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.playlist.PlayingImageView
 import io.github.neoruaa.glasmio.core.LocalGlassColors
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 
 internal val ThreeRowSongListHeight: Dp
     get() = HomeSongCoverSize * 3 + HomeSongRowSpacing * 2
@@ -97,9 +99,9 @@ internal fun ThreeRowSongList(
     val pagerState = rememberPagerState(pageCount = { (itemCount + 2) / 3 })
     HorizontalPager(
         state = pagerState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.glasmioHorizontalEdgeToEdge().fillMaxWidth(),
         pageSize = PageSize.Fixed(columnWidth),
-        contentPadding = contentPadding,
+        contentPadding = glasmioHorizontalContentPadding(contentPadding),
         pageSpacing = columnSpacing,
         verticalAlignment = Alignment.Top,
     ) { column ->

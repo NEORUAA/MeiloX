@@ -35,6 +35,8 @@ import com.ljyh.mei.playback.EqualizerPreset
 import io.github.neoruaa.glasmio.ui.GlasmioButton
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import com.ljyh.mei.ui.component.MeiloXSwitch
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -124,7 +126,8 @@ fun EqualizerSettings() {
         }
         item {
             LazyRow(
-                modifier = Modifier.swipeBackExcluded(),
+                modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+                contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = 0.dp)),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(EqualizerPreset.entries, key = EqualizerPreset::name) { item ->

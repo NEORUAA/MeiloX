@@ -34,6 +34,8 @@ import com.ljyh.mei.constants.PortraitRecommendCardWidth
 import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.home.homeArtworkBorder
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 
 private val shimmerColor @Composable get() = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
 private val cardShape = ContinuousRoundedRectangle(8.dp)
@@ -48,7 +50,7 @@ fun HomeShimmer(contentPadding: PaddingValues) {
     ShimmerHost {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(HomeSectionSpacing),
-            contentPadding = contentPadding
+            contentPadding = glasmioHorizontalContentPadding(contentPadding)
         ) {
             item {
                 RecommendRowShimmer(
@@ -79,9 +81,9 @@ private fun RecommendRowShimmer(
     Column {
         TitleShimmer()
         LazyRow(
-            modifier = Modifier.swipeBackExcluded(),
+            modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
             horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-            contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
+            contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = HomeRowHorizontalPadding))
         ) {
             items(count) {
                 RecommendCardShimmer(cardWidth, cardHeight)
@@ -115,9 +117,9 @@ private fun PlaylistBlockShimmer(
         Column {
             TitleShimmer()
             LazyRow(
-                modifier = Modifier.swipeBackExcluded(),
+                modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
                 horizontalArrangement = Arrangement.spacedBy(cardSpacing),
-                contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding)
+                contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = HomeRowHorizontalPadding))
             ) {
                 items(count) {
                     PlaylistCardShimmer(cardSize)

@@ -67,6 +67,8 @@ import com.ljyh.mei.playback.SongDownloadInfo
 import com.ljyh.mei.source.api.*
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import com.ljyh.mei.ui.local.LocalPlayerConnection
 import com.ljyh.mei.ui.navigation.MeiNavigator
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
@@ -559,10 +561,10 @@ private fun SourceArtistDetail(
                 Column {
                     SectionTitle(stringResource(R.string.artist_albums), onClick = onAllAlbums,
                         landscape = landscape, topPadding = 16.dp)
-                    LazyRow(contentPadding = PaddingValues(horizontal = if (landscape)
-                        com.ljyh.mei.constants.DetailPageHorizontalPadding else 20.dp),
+                    LazyRow(contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = if (landscape)
+                        com.ljyh.mei.constants.DetailPageHorizontalPadding else 20.dp)),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.swipeBackExcluded()) {
+                        modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded()) {
                         items(albums, key = { it.ref.albumId }) { album ->
                             ArtistAlbumCard(album.title, album.artworkUrl, album.trackCount,
                                 com.ljyh.mei.constants.homePlaylistCardSize(landscape)) {

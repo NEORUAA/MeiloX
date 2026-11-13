@@ -29,6 +29,8 @@ import com.ljyh.mei.constants.*
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.screen.main.home.homeRowSnapPosition
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -41,10 +43,17 @@ internal fun HomeRecommendationRow(keys: List<String>, content: @Composable (Int
     val spacing = homeCardSpacing(landscape)
     val scrollState = rememberScrollState()
     val fling = rememberHomeRowFlingBehavior(scrollState, width, spacing, keys.size)
+    val contentPadding = glasmioHorizontalContentPadding(
+        androidx.compose.foundation.layout.PaddingValues(horizontal = HomeRowHorizontalPadding),
+    )
     Row(Modifier.fillMaxWidth().swipeBackExcluded().height(height)
-        .horizontalScroll(scrollState, flingBehavior = fling).padding(horizontal = HomeRowHorizontalPadding),
-        horizontalArrangement = Arrangement.spacedBy(spacing), verticalAlignment = Alignment.Top) {
-        keys.forEachIndexed { index, itemKey -> key(itemKey) { content(index) } }
+        .glasmioHorizontalEdgeToEdge()
+        .horizontalScroll(scrollState, flingBehavior = fling),
+        verticalAlignment = Alignment.Top) {
+        // Keep both the original card spacing and the hardware safe area inside the scroll range.
+        Row(Modifier.padding(contentPadding), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+            keys.forEachIndexed { index, itemKey -> key(itemKey) { content(index) } }
+        }
     }
 }
 

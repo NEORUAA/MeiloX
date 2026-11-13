@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 
 
 @Composable
@@ -27,8 +29,8 @@ fun ModernCapsuleTabs(
     onTabClick: (Int) -> Unit
 ) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
-        contentPadding = PaddingValues(horizontal = 8.dp), // 容器内部的内边距
+        modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+        contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = 8.dp)), // 容器内部的内边距
         horizontalArrangement = Arrangement.SpaceEvenly,   // 均匀分布，或者用 spacedBy
         verticalAlignment = Alignment.CenterVertically
     ) {

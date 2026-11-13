@@ -69,6 +69,8 @@ import io.github.neoruaa.glasmio.icons.SfIcon
 import io.github.neoruaa.glasmio.icons.SfSymbol
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.utils.rememberPreference
@@ -206,8 +208,8 @@ fun SharedSearchLandingScreen(
             state.discovery?.let { discovery ->
                 item(key = "recommendations") {
                     LazyRow(
-                        modifier = Modifier.swipeBackExcluded(),
-                        contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+                        modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+                        contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = HomeRowHorizontalPadding)),
                         horizontalArrangement = Arrangement.spacedBy(homeCardSpacing(isLandscape)),
                     ) {
                         items(discovery.recommendations, key = SearchRecommendation::id) { playlist ->

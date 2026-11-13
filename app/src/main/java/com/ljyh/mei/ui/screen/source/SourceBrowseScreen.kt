@@ -167,6 +167,8 @@ import com.ljyh.mei.ui.component.item.ThreeRowSongList
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalContentPadding
+import io.github.neoruaa.glasmio.scaffold.glasmioHorizontalEdgeToEdge
 import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.screen.Screen
@@ -280,19 +282,23 @@ fun SourceFeedScreen(
                 )
             },
         ) { padding ->
-            PullToRefreshBox(isRefreshing = refreshing, state = refreshState, onRefresh = {
-                if (state.providerId == selectedId && !state.loading && !state.refreshing) viewModel.refresh()
-            }) {
+            PullToRefreshBox(
+                modifier = Modifier.glasmioHorizontalEdgeToEdge(),
+                isRefreshing = refreshing,
+                state = refreshState,
+                onRefresh = {
+                    if (state.providerId == selectedId && !state.loading && !state.refreshing) viewModel.refresh()
+                },
+            ) {
                 Box(Modifier.fillMaxSize().pullToRefreshRebound(refreshState, refreshing)) {
                     if (kind == FeedKind.HOME && (state.providerId != selectedId || state.loading && state.sections.isEmpty())) {
                         HomeShimmer(PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + HomeSectionSpacing))
                     } else LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
+                        contentPadding = glasmioHorizontalContentPadding(PaddingValues(
                             top = padding.calculateTopPadding() - if (kind == FeedKind.HOME) 4.dp else 0.dp,
                             bottom = padding.calculateBottomPadding() + if (kind == FeedKind.HOME) HomeSectionSpacing else 0.dp,
-                        ),
+                        )),
                         verticalArrangement = Arrangement.spacedBy(if (kind == FeedKind.DISCOVER) 16.dp else HomeSectionSpacing),
                     ) {
                         if (!device.isLandscape) item("source-feed-title") {
@@ -301,7 +307,7 @@ fun SourceFeedScreen(
                                     else Modifier.offset(y = (-10).dp).padding(horizontal = 16.dp, vertical = 6.dp))
                         }
                         if (kind == FeedKind.DISCOVER && categories.isNotEmpty()) item("source-feed-categories") {
-                            LazyRow(Modifier.fillMaxWidth().swipeBackExcluded(), contentPadding = PaddingValues(horizontal = 16.dp),
+                            LazyRow(Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(), contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = 16.dp)),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(categories, key = { it.id }) { category ->
                                     val selected = category.id == (categoryId ?: categories.first().id)
@@ -424,8 +430,8 @@ internal fun SourceFeedSectionContent(
             LazyRow(
                 state = rowState,
                 flingBehavior = rememberHomeRowFlingBehavior(rowState),
-                modifier = Modifier.fillMaxWidth().swipeBackExcluded(),
-                contentPadding = PaddingValues(horizontal = HomeRowHorizontalPadding),
+                modifier = Modifier.fillMaxWidth().glasmioHorizontalEdgeToEdge().swipeBackExcluded(),
+                contentPadding = glasmioHorizontalContentPadding(PaddingValues(horizontal = HomeRowHorizontalPadding)),
                 horizontalArrangement = Arrangement.spacedBy(spacing),
             ) {
                 if (section.cards.isNotEmpty()) items(section.cards, key = { it.id }) { card ->
