@@ -625,11 +625,13 @@ fun SourceLibraryScreen(
     val focus = LocalFocusManager.current
     val play = rememberSourceQueuePlayer("source-library:$selectedId:${collection.name}", libraryCollectionTitle(collection),
         viewModel = viewModel, queueRequest = SourceContentRequest.Library(collection, selectedId))
-    fun playVisible(tracks: List<Track>, index: Int) {
+    val playAll = rememberSourceQueuePlayer("source-library:$selectedId:${collection.name}", libraryCollectionTitle(collection),
+        viewModel = viewModel, queueRequest = SourceContentRequest.Library(collection, selectedId), randomStart = true)
+    fun playVisible(tracks: List<Track>, index: Int, randomStart: Boolean = false) {
         if (query.text.isNotBlank()) {
             sourceLibrarySearchQueue("source-library-search:$selectedId:${collection.name}", libraryCollectionTitle(collection), tracks, index)
-                ?.let { player?.playQueue(it) }
-        } else play(tracks, index)
+                ?.let { player?.playQueue(it, randomStart = randomStart) }
+        } else if (randomStart) playAll(tracks, index) else play(tracks, index)
     }
     SourceBrowseScrollRequests(listState)
     val categoryOverview = style == LibraryStyle.AppleMusic && category == null && initialCollection == null && !showArtists
@@ -840,7 +842,7 @@ fun SourceLibraryScreen(
                 }
                 if (page == LibraryPage.Songs && !showArtists && filtered.isNotEmpty()) item("source-library-play-all") { GlasmioGroupedList(Modifier.padding(bottom = 12.dp)) {
                     GlasmioListRow(title = stringResource(R.string.library_play_all), systemName = "play.fill", showTopSeparator = false,
-                        onClick = { playVisible(filtered.filterIsInstance<SourceItem.TrackItem>().map { it.track }, 0) })
+                        onClick = { playVisible(filtered.filterIsInstance<SourceItem.TrackItem>().map { it.track }, 0, randomStart = true) })
                     if (hasRadio) GlasmioListRow(title = stringResource(R.string.library_heart_mode), systemName = "heart.circle.fill",
                         onClick = { player?.fmStart(filtered.filterIsInstance<SourceItem.TrackItem>().randomOrNull()?.track?.ref?.trackId, selectedId) })
                 } }
