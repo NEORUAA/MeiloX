@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,6 +45,7 @@ import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.LocalGroupedListBackgroundAlpha
 import com.ljyh.mei.ui.component.item.Track
 import com.ljyh.mei.utils.rememberPreference
+import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 
 @Composable
 fun PlaylistTrackList(
@@ -125,13 +125,12 @@ fun PlaylistTrackList(
                 when (pagingItems.loadState.append) {
                     is LoadState.Loading -> {
                         item {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(Modifier.size(24.dp))
+                            ShimmerHost {
+                                TrackItemShimmer(
+                                    isTablet = isTablet,
+                                    flatDetailStyle = flatDetailStyle,
+                                    showArtwork = true,
+                                )
                             }
                         }
                     }
@@ -297,11 +296,13 @@ fun LazyListScope.playlistTrackItems(
         when (pagingItems.loadState.append) {
             is LoadState.Loading -> item(key = "playlist-append-loading") {
                 PlaylistSurface(isFirst = false, isLast = true, flatDetailStyle = flatDetailStyle) {
-                    Box(
-                        Modifier.fillMaxWidth().padding(18.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    ShimmerHost {
+                        TrackItemShimmer(
+                            isTablet = isTablet,
+                            flatDetailStyle = flatDetailStyle,
+                            showArtwork = showArtwork,
+                            showDuration = showDuration,
+                        )
                     }
                 }
             }

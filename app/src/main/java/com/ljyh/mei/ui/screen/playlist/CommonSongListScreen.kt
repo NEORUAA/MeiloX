@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,7 +56,6 @@ import com.ljyh.mei.ui.navigation.MeiloXPinnedListPage
 import com.ljyh.mei.ui.navigation.MeiloXPinnedPage
 import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.screen.playlist.component.PlaylistHeader
-import com.ljyh.mei.ui.screen.playlist.component.PlaylistShimmer
 import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import com.ljyh.mei.ui.screen.playlist.component.playlistTrackItems
 import com.ljyh.mei.utils.rememberEnumPreference
@@ -137,6 +135,8 @@ fun SongListDetailScreen(
         androidx.compose.foundation.lazy.rememberLazyListState(),
     headerMetadata: String? = null,
     footer: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
+    loadingTrackCount: Int = 0,
+    searchResultsLoading: Boolean = false,
     useCoverBackground: Boolean = false,
     usePlaylistTrackStyle: Boolean = useCoverBackground,
     showTrackArtwork: Boolean = true,
@@ -252,7 +252,7 @@ fun SongListDetailScreen(
                     if (adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.AlbumHeader) 32.dp
                     else if (usePlaylistTrackStyle) { if (device.isLandscape) DetailPageHorizontalPadding else 20.dp } else 16.dp,
                 splitHeader = adaptiveLandscape && landscapeLayout == SongListLandscapeLayout.Split,
-                hero = if (!isLoading || adaptiveLandscape) hero else null,
+                hero = hero,
                 onNavigateBack = if (selectionMode) onSelectionDone else onBack,
                 actionSearch = actionSearch,
                 actions = {
@@ -304,26 +304,7 @@ fun SongListDetailScreen(
                     searchAction + detailAction
                 },
             ) {
-                if (isLoading) {
-                    if (adaptiveLandscape) {
-                        items(10) {
-                            ShimmerHost {
-                                TrackItemShimmer(
-                                    isTablet = false,
-                                    flatDetailStyle = usePlaylistTrackStyle,
-                                    showArtwork = showTrackArtwork,
-                                    showDuration = adaptiveLandscape &&
-                                        landscapeLayout == SongListLandscapeLayout.AlbumHeader,
-                                )
-                            }
-                        }
-                    } else
-                        item(key = "playlist-loading") {
-                            Box(Modifier.fillMaxWidth().height(620.dp)) {
-                                PlaylistShimmer(flatDetailStyle = usePlaylistTrackStyle)
-                            }
-                        }
-                } else {
+                if (!isLoading) {
                     playlistTrackItems(
                         pagingItems = pagingItems,
                         staticTracks = uiData.tracks,
@@ -343,8 +324,27 @@ fun SongListDetailScreen(
                         trackNumber = trackNumber,
                         onMoreClick = onTrackMore,
                         emptyMessage =
-                            playlistSearchQuery.takeIf { it.isNotBlank() }?.let { "未找到匹配的歌曲" },
+                            playlistSearchQuery.takeIf { it.isNotBlank() && !searchResultsLoading }
+                                ?.let { "未找到匹配的歌曲" },
                     )
+                }
+                val pendingTrackCount = if (isLoading) maxOf(uiData.count, loadingTrackCount) else loadingTrackCount
+                if (pendingTrackCount > 0) {
+                    items(
+                        count = pendingTrackCount,
+                        key = { index -> "playlist-loading-track:$index" },
+                        contentType = { "track-skeleton" },
+                    ) {
+                        ShimmerHost {
+                            TrackItemShimmer(
+                                isTablet = device.isTablet && device.isLandscape,
+                                flatDetailStyle = usePlaylistTrackStyle,
+                                showArtwork = showTrackArtwork,
+                                showDuration = adaptiveLandscape &&
+                                    landscapeLayout == SongListLandscapeLayout.AlbumHeader,
+                            )
+                        }
+                    }
                 }
                 footer?.invoke(this)
             }

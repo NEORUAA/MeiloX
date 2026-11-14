@@ -67,6 +67,9 @@ object AppModule {
     fun provideCachedLyricDao(db: AppDatabase): CachedLyricRepository =
         CachedLyricRepository(db.cachedLyricDao())
 
+    @Provides
+    fun provideSourceTrackSearchIndexDao(db: AppDatabase) = db.sourceTrackSearchIndexDao()
+
     @Provides @Singleton
     fun provideGson(): Gson = Gson()
 }

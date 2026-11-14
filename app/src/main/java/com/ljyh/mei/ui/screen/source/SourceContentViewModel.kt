@@ -2,6 +2,8 @@ package com.ljyh.mei.ui.screen.source
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import java.security.MessageDigest
 import com.ljyh.mei.playback.queue.Queue
 import com.ljyh.mei.playback.queue.SourceContentQueue
 import com.ljyh.mei.source.api.*
@@ -15,9 +17,14 @@ import com.ljyh.mei.source.shared.whileCurrent
 import com.ljyh.mei.source.script.ScriptPluginManager
 import com.ljyh.mei.source.script.InstalledPlugin
 import com.ljyh.mei.source.script.SourceCatalogInvalidatedException
+import com.ljyh.mei.data.model.room.SourceTrackSearchIndex
+import com.ljyh.mei.di.dao.SourceTrackSearchIndexDao
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -52,6 +59,8 @@ internal data class SourceDetailTracks(
     val generation: Long,
     val contentRevision: Long,
     val editableActions: Set<PlaylistEditAction> = emptySet(),
+    val isComplete: Boolean = true,
+    val requiresRevalidation: Boolean = false,
 )
 
 data class SourceContentState(
@@ -89,10 +98,12 @@ class SourceContentViewModel internal constructor(
     private val configurePlugin: suspend (String, Map<String, String>) -> Unit = { _, _ -> throw SourceException(SourceErrorCode.UNSUPPORTED) },
     private val features: SourceFeatureClient? = null,
     private val homeCache: SourceHomeFeedCache? = null,
+    private val searchIndexDao: SourceTrackSearchIndexDao? = null,
 ) : ViewModel() {
     @Inject constructor(router: SourceRouter, preferences: SourcePreferences, registry: ProviderRegistry,
-        plugins: ScriptPluginManager, features: SourceFeatureClient, homeCache: SourceHomeFeedCache) :
-        this(router, preferences, registry, plugins.installed, { id, values -> plugins.configure(id, values); Unit }, features, homeCache)
+        plugins: ScriptPluginManager, features: SourceFeatureClient, homeCache: SourceHomeFeedCache,
+        searchIndexDao: SourceTrackSearchIndexDao) :
+        this(router, preferences, registry, plugins.installed, { id, values -> plugins.configure(id, values); Unit }, features, homeCache, searchIndexDao)
     val providers = registry.providers
     val contentRevision = router.contentRevision
     val selectedProviderId = preferences.settings.map { it.preferredBrowseProvider }
@@ -118,6 +129,8 @@ class SourceContentViewModel internal constructor(
     private val seenCursors = mutableSetOf<String>()
     private val detailTracksMutex = Mutex()
     private var detailTracksCache: SourceDetailTracks? = null
+    private var playlistPreload: Job? = null
+    private val trackCacheGson = Gson()
 
     init {
         viewModelScope.launch {
@@ -187,7 +200,12 @@ class SourceContentViewModel internal constructor(
                                 homeCache?.write(owner, SourceFeedPage(state.value.sections, state.value.categories), cacheGuard)
                             }
                         }
-                        if (token == generation) mutableState.value = state.value.copy(refreshing = false)
+                        if (token == generation) {
+                            mutableState.value = state.value.copy(refreshing = false)
+                            if (requested is SourceContentRequest.Detail && requested.ref is PlaylistRef && state.value.error == null && searchIndexDao != null) {
+                                warmPlaylist(requested.ref, token, refreshing)
+                            }
+                        }
                     }
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (error: Exception) {
@@ -201,6 +219,8 @@ class SourceContentViewModel internal constructor(
     private fun invalidatePage() {
         generation++
         detailTracksCache = null
+        playlistPreload?.cancel()
+        playlistPreload = null
         pagination?.cancel()
         albumPagination?.cancel()
         artistSearchJob?.cancel()
@@ -216,13 +236,16 @@ class SourceContentViewModel internal constructor(
     fun pluginId(id: String = state.value.providerId): String? = installedPlugins.value
         .firstOrNull { it.manifest.providerId == id }?.manifest?.id
 
-    fun loadMore() {
+    fun loadMore() = loadMore(DEFAULT_PAGE_SIZE)
+
+    internal fun loadMore(limit: Int) {
         val current = mutableState.value
         val requested = request.value ?: return
-        if (requested != displayedRequest || !current.hasMore || current.loading || current.refreshing || pagination?.isActive == true) return
+        if (requested != displayedRequest || !current.hasMore || current.loading || current.refreshing || pagination?.isActive == true || playlistPreload?.isActive == true) return
         val token = generation
+        val pageLimit = limit.coerceIn(1, MAX_PAGE_SIZE)
         mutableState.value = current.copy(loading = true, error = null)
-        pagination = viewModelScope.launch { load(requested, current.providerId, token, append = true) }
+        pagination = viewModelScope.launch { load(requested, current.providerId, token, append = true, pageLimit = pageLimit) }
     }
 
     internal suspend fun indexedTrackMembership(requested: SourceContentRequest, track: TrackRef): Boolean? {
@@ -257,7 +280,7 @@ class SourceContentViewModel internal constructor(
             if (index >= 0) return index
             if (current.refreshing || !current.hasMore) return null
 
-            val pending = pagination?.takeIf { it.isActive } ?: run {
+            val pending = playlistPreload?.takeIf { it.isActive } ?: pagination?.takeIf { it.isActive } ?: run {
                 if (current.loading || current.error != null && retried) return null
                 if (current.error != null) retried = true
                 loadMore()
@@ -270,9 +293,11 @@ class SourceContentViewModel internal constructor(
     }
 
     private suspend fun load(requested: SourceContentRequest, id: String, token: Long, append: Boolean, refresh: Boolean = false,
+        pageLimit: Int = DEFAULT_PAGE_SIZE,
         forceAccountRefresh: Boolean = false, retryCancellation: Boolean = true) {
         val previous = mutableState.value
-        val page = PageRequest(if (append) previous.nextOffset else 0, 30, if (append) previous.nextCursor else null, refresh = refresh && !append)
+        val page = PageRequest(if (append) previous.nextOffset else 0, pageLimit.coerceIn(1, MAX_PAGE_SIZE),
+            if (append) previous.nextCursor else null, refresh = refresh && !append)
         var received = 0
         var incomingRefs = emptyList<ContentRef>()
         var loadingProvider: MusicProvider? = null
@@ -315,7 +340,16 @@ class SourceContentViewModel internal constructor(
                         if (token != generation || !sameOwner(boundProvider, previous)) return
                         if (!append) mutableState.value = state.value.copy(title = info.title, artworkUrl = info.artworkUrl,
                             description = info.description, detail = SourceItem.PlaylistItem(info))
-                        val tracks = refreshedTracks ?: router.playlistTracks(ref, page)
+                        val cachedTracks = if (!append && !page.refresh && searchIndexDao != null &&
+                            boundProvider is CatalogIndexCapability) {
+                            val snapshot = detailSnapshot(ref, state.value)
+                            val ids = playlistTrackIds(ref, boundProvider, info.trackCount.takeIf { it > 0 })
+                            ids?.let {
+                                readSearchIndex(ref, snapshot, it.size, searchIndexFingerprint(it.size, it),
+                                    emptyList(), it)?.takeIf { rows -> rows.size == it.size }
+                            }
+                        } else null
+                        val tracks = cachedTracks?.let { SourcePage(it) } ?: refreshedTracks ?: router.playlistTracks(ref, page)
                         received = tracks.items.size
                         incomingRefs = tracks.items.map { it.ref }
                         previous.copy(title = info.title, artworkUrl = info.artworkUrl, description = info.description,
@@ -397,6 +431,7 @@ class SourceContentViewModel internal constructor(
                 // retry rather than making concurrent refreshes invalidate one another again.
                 withContext(cancelled.retryContext) {
                     load(requested, id, token, append, refresh = refresh && requested is SourceContentRequest.Feed,
+                        pageLimit = page.limit,
                         forceAccountRefresh = forceAccountRefresh, retryCancellation = false)
                 }
             } else {
@@ -509,6 +544,11 @@ class SourceContentViewModel internal constructor(
         }
     }
 
+    private companion object {
+        const val DEFAULT_PAGE_SIZE = 30
+        const val MAX_PAGE_SIZE = 100
+    }
+
     /** A pending card remains pinned to the displayed source and account until playback commits. */
     suspend fun feedQueue(card: SourceFeedCard): Pair<List<Track>, Boolean> {
         val displayed = state.value
@@ -592,51 +632,299 @@ class SourceContentViewModel internal constructor(
             displayed.accountRevision, account, token, revision).also { ensureDetailCurrent(it) }
     }
 
-    /** Bulk actions share the playback paginator while keeping the visible list and its scroll position. */
-    internal suspend fun detailTracks(ref: ContentRef, reload: Boolean = false): SourceDetailTracks = detailTracksMutex.withLock {
-        if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
-            ensureDetailCurrent(it)
-            return@withLock it
-        }
-        val displayed = state.value
-        val reloadDetail = reload || displayed.error != null
-        val snapshot = detailSnapshot(ref, displayed)
-        val detail = if (reloadDetail) when (ref) {
-            is PlaylistRef -> SourceItem.PlaylistItem(router.playlist(ref))
-            is AlbumRef -> SourceItem.AlbumItem(router.album(ref))
-            is TrackRef -> SourceItem.TrackItem(router.getTrack(ref) ?: throw SourceException(SourceErrorCode.NOT_FOUND))
-            else -> displayed.detail
-        } else displayed.detail
-        ensureDetailCurrent(snapshot)
-        val initialTracks = if (reloadDetail) emptyList() else displayed.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
-        val total = when (detail) {
-            is SourceItem.PlaylistItem -> detail.playlist.trackCount
-            is SourceItem.AlbumItem -> detail.album.trackCount
-            else -> null
-        }?.takeIf { it > 0 }
-        val tracks = if (ref is TrackRef) listOf((detail as? SourceItem.TrackItem)?.track
-            ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)) else {
-            val queue = SourceContentQueue(router, ref, displayed.title, initialTracks,
-                hasMore = reloadDetail || displayed.hasMore,
-                nextCursor = if (reloadDetail) null else displayed.nextCursor,
-                nextOffset = if (reloadDetail) 0 else displayed.nextOffset,
-                knownTotalCount = total, account = snapshot.account,
-                initialAccountRevision = displayed.accountRevision, mediaItemFactory = { null })
+    /** Browsing warms the same collection snapshot used by search and bulk actions. */
+    private fun warmPlaylist(ref: PlaylistRef, token: Long, reload: Boolean) {
+        val browsing = state.value
+        playlistPreload?.cancel()
+        playlistPreload = viewModelScope.launch {
             try {
-                while (queue.hasNextPage()) {
-                    ensureDetailCurrent(snapshot)
-                    when (val result = queue.nextPage()) {
-                        is Queue.Result.Error -> throw result.exception ?: SourceException(SourceErrorCode.INVALID_RESPONSE)
-                        is Queue.Result.Success -> Unit
+                var complete = detailTracks(ref, pageSize = MAX_PAGE_SIZE, usePersistentCache = !reload)
+                ensureDetailCurrent(complete)
+                if (token == generation) {
+                    mutableState.value = state.value.copy(items = complete.tracks.map(SourceItem::TrackItem),
+                        hasMore = false, nextCursor = null, nextOffset = complete.tracks.size, error = null)
+                }
+                if (complete.requiresRevalidation) {
+                    complete = detailTracks(ref, reload = true, pageSize = MAX_PAGE_SIZE, usePersistentCache = false)
+                    ensureDetailCurrent(complete)
+                    if (token == generation) {
+                        mutableState.value = state.value.copy(items = complete.tracks.map(SourceItem::TrackItem),
+                            hasMore = false, nextCursor = null, nextOffset = complete.tracks.size, error = null)
                     }
                 }
-                queue.loadedTracks()
-            } finally { queue.release() }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                timber.log.Timber.tag("SourceContent").w(error, "Playlist cache warmup failed")
+                if (token == generation) {
+                    if (error.sourceCode() == SourceErrorCode.INVALID_RESPONSE) {
+                        continuePlaylistBrowsing(ref, browsing, token)
+                    } else mutableState.value = state.value.copy(error = error.sourceCode())
+                }
+            }
         }
-        ensureDetailCurrent(snapshot)
-        if (total != null && tracks.size != total) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
-        snapshot.copy(title = detail?.title ?: displayed.title, tracks = tracks,
-            editableActions = (detail as? SourceItem.PlaylistItem)?.playlist?.editableActions.orEmpty()).also { detailTracksCache = it }
+    }
+
+    /** Missing metadata must not discard a provider's valid browsing cursor. */
+    private suspend fun continuePlaylistBrowsing(ref: PlaylistRef, browsing: SourceContentState, token: Long) {
+        if (token != generation) return
+        try {
+            mutableState.value = state.value.copy(items = browsing.items, hasMore = browsing.hasMore,
+                nextCursor = browsing.nextCursor, nextOffset = browsing.nextOffset, loading = false, error = null)
+            while (token == generation && state.value.hasMore && state.value.error == null) {
+                mutableState.value = state.value.copy(loading = true)
+                load(SourceContentRequest.Detail(ref), ref.providerId, token, append = true, pageLimit = MAX_PAGE_SIZE)
+            }
+            if (token != generation || state.value.error != null) return
+            val current = state.value
+            val tracks = current.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
+            detailTracksCache = detailSnapshot(ref, current).copy(tracks = tracks,
+                editableActions = (current.detail as? SourceItem.PlaylistItem)?.playlist?.editableActions.orEmpty())
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            if (token == generation) mutableState.value = state.value.copy(error = error.sourceCode())
+        }
+    }
+
+    /** All callers share one complete collection load, independently of the current query. */
+    internal suspend fun detailTracks(
+        ref: ContentRef,
+        reload: Boolean = false,
+        pageSize: Int = DEFAULT_PAGE_SIZE,
+        usePersistentCache: Boolean = true,
+        onProgress: suspend (SourceDetailTracks) -> Unit = {},
+    ): SourceDetailTracks {
+        if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
+            ensureDetailCurrent(it)
+            onProgress(it)
+            return it
+        }
+        return detailTracksMutex.withLock {
+            if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
+                ensureDetailCurrent(it)
+                onProgress(it)
+                return@withLock it
+            }
+            val displayed = state.first { !it.loading }
+            if (!reload) detailTracksCache?.takeIf { it.ref == ref }?.let {
+                ensureDetailCurrent(it)
+                onProgress(it)
+                return@withLock it
+            }
+            val reloadDetail = reload || displayed.error != null
+            val snapshot = detailSnapshot(ref, displayed)
+            val refreshedPage = if (reload && ref is PlaylistRef)
+                router.playlistTracks(ref, PageRequest(limit = pageSize.coerceIn(1, MAX_PAGE_SIZE), refresh = true)) else null
+            val detail = if (reloadDetail) when (ref) {
+                is PlaylistRef -> SourceItem.PlaylistItem(router.playlist(ref))
+                is AlbumRef -> SourceItem.AlbumItem(router.album(ref))
+                is TrackRef -> SourceItem.TrackItem(router.getTrack(ref) ?: throw SourceException(SourceErrorCode.NOT_FOUND))
+                else -> displayed.detail
+            } else displayed.detail
+            ensureDetailCurrent(snapshot)
+            val total = when (detail) {
+                is SourceItem.PlaylistItem -> detail.playlist.trackCount
+                is SourceItem.AlbumItem -> detail.album.trackCount
+                else -> null
+            }?.takeIf { it > 0 }
+            val initialTracks = refreshedPage?.items ?: if (reloadDetail) emptyList() else displayed.items.filterIsInstance<SourceItem.TrackItem>().map { it.track }
+            val base = snapshot.copy(title = detail?.title ?: displayed.title,
+                editableActions = (detail as? SourceItem.PlaylistItem)?.playlist?.editableActions.orEmpty())
+            val canonicalIds = if (ref is PlaylistRef) playlistTrackIds(ref, snapshot.provider, total) else null
+            ensureDetailCurrent(base)
+            val canHydrateIds = canonicalIds != null && SourceCapability.TRACK in snapshot.provider.capabilities &&
+                (snapshot.provider as? BatchCatalogCapability)?.supportsBatchTrackRequests == true
+            val expectedCount = canonicalIds?.size ?: total
+            val fingerprint = expectedCount?.let { searchIndexFingerprint(it, canonicalIds ?: initialTracks.take(DEFAULT_PAGE_SIZE).map(Track::ref)) }
+            val cached = if (!reload && usePersistentCache && ref is PlaylistRef && expectedCount != null && fingerprint != null)
+                readSearchIndex(ref, base, expectedCount, fingerprint, initialTracks, canonicalIds) else null
+            if (cached != null && cached.size == expectedCount) {
+                return@withLock base.copy(tracks = cached, requiresRevalidation = canonicalIds == null).also {
+                    ensureDetailCurrent(it)
+                    detailTracksCache = it
+                    onProgress(it)
+                }
+            }
+            var persistedCount = cached?.size ?: 0
+            suspend fun publishProgress(loaded: List<Track>, complete: Boolean = false, nextPage: PageRequest? = null) {
+                ensureDetailCurrent(base)
+                val progress = base.copy(tracks = loaded, isComplete = complete)
+                onProgress(progress)
+                // Canonical identities let a partial cache resume safely using its exact offset.
+                if (ref is PlaylistRef && canHydrateIds && expectedCount != null && fingerprint != null) {
+                    if (loaded.size > persistedCount) {
+                        writeSearchIndex(ref, base, loaded, expectedCount, fingerprint, complete,
+                            startPosition = persistedCount)
+                        persistedCount = loaded.size
+                    }
+                }
+                if (ref is PlaylistRef && playlistPreload?.isActive == true && generation == base.generation &&
+                    loaded.size >= state.value.items.size) {
+                    mutableState.value = state.value.copy(items = loaded.map(SourceItem::TrackItem),
+                        hasMore = !complete, nextCursor = nextPage?.cursor, nextOffset = nextPage?.offset ?: loaded.size)
+                }
+            }
+            val prefix = cached?.takeIf { canHydrateIds && it.size >= initialTracks.size } ?: initialTracks
+            if (canonicalIds != null && prefix.map(Track::ref) != canonicalIds.take(prefix.size)) {
+                throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            }
+            publishProgress(prefix, nextPage = PageRequest(displayed.nextOffset, pageSize.coerceIn(1, MAX_PAGE_SIZE), displayed.nextCursor))
+            val tracks = if (canHydrateIds && canonicalIds != null) {
+                val loaded = prefix.toMutableList()
+                canonicalIds.drop(prefix.size).chunked(pageSize.coerceIn(1, MAX_PAGE_SIZE)).chunked(3).forEach { batches ->
+                    coroutineScope {
+                        val pending = batches.map { refs -> async {
+                            try {
+                                ensureDetailCurrent(base)
+                                val page = router.getTracks(refs)
+                                ensureDetailCurrent(base)
+                                if (page.map(Track::ref) != refs) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+                                Result.success(page)
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (error: Exception) { Result.failure(error) }
+                        } }
+                        pending.forEach { request ->
+                            loaded.addAll(request.await().getOrThrow())
+                            publishProgress(loaded.toList())
+                        }
+                    }
+                }
+                loaded.toList()
+            } else if (ref is TrackRef) listOf((detail as? SourceItem.TrackItem)?.track
+                ?: throw SourceException(SourceErrorCode.INVALID_RESPONSE)) else {
+                val queue = SourceContentQueue(router, ref, displayed.title, initialTracks,
+                    hasMore = refreshedPage?.hasMore ?: (reloadDetail || displayed.hasMore),
+                    nextCursor = refreshedPage?.nextCursor ?: if (reloadDetail) null else displayed.nextCursor,
+                    nextOffset = refreshedPage?.items?.size ?: if (reloadDetail) 0 else displayed.nextOffset,
+                    pageSize = pageSize.coerceIn(1, MAX_PAGE_SIZE), knownTotalCount = total, account = base.account,
+                    initialAccountRevision = displayed.accountRevision, mediaItemFactory = { null })
+                try {
+                    while (queue.hasNextPage()) {
+                        ensureDetailCurrent(base)
+                        when (val result = queue.nextPage()) {
+                            is Queue.Result.Error -> throw result.exception ?: SourceException(SourceErrorCode.INVALID_RESPONSE)
+                            is Queue.Result.Success -> publishProgress(queue.loadedTracks(), !queue.hasNextPage(), queue.nextPageRequest())
+                        }
+                    }
+                    queue.loadedTracks()
+                } finally { queue.release() }
+            }
+            ensureDetailCurrent(base)
+            if (expectedCount != null && tracks.size != expectedCount ||
+                canonicalIds != null && tracks.map(Track::ref) != canonicalIds) throw SourceException(SourceErrorCode.INVALID_RESPONSE)
+            if (ref is PlaylistRef && expectedCount != null && fingerprint != null) {
+                writeSearchIndex(ref, base, tracks, expectedCount, fingerprint, complete = true)
+            }
+            base.copy(tracks = tracks).also {
+                detailTracksCache = it
+                onProgress(it)
+            }
+        }
+    }
+
+    private suspend fun playlistTrackIds(ref: PlaylistRef, owner: MusicProvider, total: Int?): List<TrackRef>? {
+        val index = owner as? CatalogIndexCapability ?: return null
+        return try {
+            index.completeTrackIds(ref.playlistId)?.takeIf { it.playlistId == ref.playlistId }?.ids?.takeIf { ids ->
+                (total == null || ids.size == total) && ids.all { it.providerId == ref.providerId }
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: SourceException) {
+            if (error.code != SourceErrorCode.UNSUPPORTED) throw error
+            null
+        }
+    }
+
+    private suspend fun readSearchIndex(
+        ref: PlaylistRef,
+        snapshot: SourceDetailTracks,
+        expectedCount: Int,
+        fingerprint: String,
+        initialTracks: List<Track>,
+        canonicalIds: List<TrackRef>?,
+    ): List<Track>? = withContext(Dispatchers.IO) {
+        val dao = searchIndexDao ?: return@withContext null
+        try {
+            val rows = dao.getIndex(ref.providerId, snapshot.provider.instanceId.value, snapshot.providerVersion,
+                searchIndexAccount(snapshot), ref.playlistId, fingerprint)
+            if (rows.isEmpty() || rows.size > expectedCount || rows.withIndex().any { (position, row) ->
+                    row.expectedCount != expectedCount || row.position != position ||
+                        canonicalIds != null && row.trackId != canonicalIds[position].trackId
+                }) return@withContext null
+            val tracks = rows.map { row ->
+                trackCacheGson.fromJson(row.trackJson, Track::class.java).also { track ->
+                    require(track.ref == TrackRef(ref.providerId, row.trackId) && track.title.isNotBlank())
+                    require(track.durationMs >= 0 && track.artists.all { it.name.isNotBlank() })
+                    requireNotNull(track.album.title)
+                }
+            }.toMutableList()
+            initialTracks.take(tracks.size).forEachIndexed { position, track ->
+                if (tracks[position].ref != track.ref) return@withContext null
+                tracks[position] = track
+            }
+            tracks
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            timber.log.Timber.tag("SourceContent").w(error, "Playlist cache read failed")
+            null
+        }
+    }
+
+    private suspend fun writeSearchIndex(
+        ref: PlaylistRef,
+        snapshot: SourceDetailTracks,
+        tracks: List<Track>,
+        expectedCount: Int,
+        fingerprint: String,
+        complete: Boolean,
+        startPosition: Int = 0,
+    ) = withContext(Dispatchers.IO) {
+        val dao = searchIndexDao ?: return@withContext
+        if (tracks.isEmpty()) return@withContext
+        try {
+            ensureDetailCurrent(snapshot)
+            val timestamp = System.currentTimeMillis()
+            val entries = tracks.drop(startPosition).mapIndexed { index, track ->
+                val position = startPosition + index
+                SourceTrackSearchIndex(
+                    providerId = ref.providerId,
+                    providerInstanceId = snapshot.provider.instanceId.value,
+                    providerVersion = snapshot.providerVersion,
+                    accountRevision = searchIndexAccount(snapshot),
+                    playlistId = ref.playlistId,
+                    playlistFingerprint = fingerprint,
+                    contentRevision = snapshot.contentRevision,
+                    position = position,
+                    trackId = track.ref.trackId,
+                    title = track.title,
+                    artists = track.artists.joinToString(SourceTrackSearchIndex.ARTIST_SEPARATOR) { it.name },
+                    albumTitle = track.album.title,
+                    trackJson = trackCacheGson.toJson(track),
+                    expectedCount = expectedCount,
+                    updatedAt = timestamp,
+                )
+            }
+            if (complete) dao.replaceIndex(entries) else dao.upsert(entries)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            timber.log.Timber.tag("SourceContent").w(error, "Playlist cache write failed")
+        }
+    }
+
+    private fun searchIndexAccount(snapshot: SourceDetailTracks): String {
+        if (snapshot.provider is AccountRevisionCapability) return snapshot.accountRevision.orEmpty()
+        val account = snapshot.account ?: return ""
+        val identity = trackCacheGson.toJson(listOf(account.ref.instanceId.value, account.ref.accountId.value, account.sessionRevision))
+        return MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun searchIndexFingerprint(expectedCount: Int, refs: List<TrackRef>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        refs.forEach { ref ->
+            digest.update(ref.trackId.toByteArray(Charsets.UTF_8))
+            digest.update(0.toByte())
+        }
+        return "$expectedCount:" + digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     internal suspend fun ensureDetailCurrent(snapshot: SourceDetailTracks, includeContent: Boolean = true) {

@@ -118,6 +118,7 @@ class SourceContentQueue private constructor(
     override val loadedCount: Int get() = synchronized(lock) { tracks.size }
 
     internal fun loadedTracks(): List<Track> = synchronized(lock) { tracks.toList() }
+    internal fun nextPageRequest(): PageRequest = synchronized(lock) { PageRequest(offset, pageSize, cursor) }
     internal val hasCloudOrder: Boolean get() = synchronized(lock) { cloudOrdered }
     internal val playbackPageSize: Int get() = pageSize
 

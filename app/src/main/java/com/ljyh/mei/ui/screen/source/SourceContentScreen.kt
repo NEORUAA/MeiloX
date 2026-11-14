@@ -27,6 +27,8 @@ import com.ljyh.mei.ui.screen.playlist.rememberDetailSelection
 import com.ljyh.mei.ui.screen.artist.*
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackRow
 import com.ljyh.mei.ui.screen.playlist.component.DetailTrackDivider
+import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
+import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.component.playlist.rememberFavoriteTrackIds
 import com.ljyh.mei.ui.component.item.LandscapeMediaRow
@@ -273,22 +275,21 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
         var orderGeneration by remember(ownerKey) { mutableIntStateOf(0) }
         var order by remember(ownerKey) { mutableStateOf<PlaylistOrderState<TrackRef>?>(null) }
         var orderTracks by remember(ownerKey) { mutableStateOf<SourceDetailTracks?>(null) }
-        var searchTracks by remember(ownerKey) { mutableStateOf<SourceDetailTracks?>(null) }
-        var searching by remember(ownerKey) { mutableStateOf(false) }
-        var searchError by remember(ownerKey) { mutableStateOf<SourceErrorCode?>(null) }
+        var searchTracks by remember(ownerKey, contentRevision) { mutableStateOf<SourceDetailTracks?>(null) }
+        var searchError by remember(ownerKey, contentRevision) { mutableStateOf<SourceErrorCode?>(null) }
+        var searching by remember(ownerKey, contentRevision) { mutableStateOf(false) }
         var searchAttempt by remember(ownerKey) { mutableIntStateOf(0) }
         val playSearch = rememberSourceQueuePlayer("source-${ref.providerId}-${ref.type.wireName}-${ref.contentId}", state.title)
         val shuffleSearch = rememberSourceQueuePlayer("source-search-${ref.providerId}-${ref.type.wireName}-${ref.contentId}",
             state.title, shuffle = true, preserveRepeatMode = false, randomStart = true)
         LaunchedEffect(ownerKey, query, contentRevision, state.detail?.ref, state.loading, state.refreshing, searchAttempt) {
-            searchTracks = null
             searchError = null
             searching = false
             if (query.isBlank() || state.detail?.ref != ref || state.loading || state.refreshing) return@LaunchedEffect
             searching = true
             try {
-                delay(200)
-                searchTracks = viewModel.detailTracks(ref)
+                delay(80)
+                searchTracks = viewModel.detailTracks(ref, pageSize = 100) { progress -> searchTracks = progress }
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (error: Exception) { searchError = error.sourceCode()
             } finally { searching = false }
@@ -366,9 +367,16 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
             }
         }
         DetailSelectionToolbar(selection,
-            onSelectAll = { sourceDetailMatches(viewModel.detailTracks(ref).tracks, query).map { TrackRefCodec.mediaId(it.value.ref) }.toSet() },
+            onSelectAll = {
+                val selectedQuery = query
+                sourceDetailMatches(viewModel.detailTracks(ref).tracks, selectedQuery)
+                    .map { TrackRefCodec.mediaId(it.value.ref) }.toSet()
+            },
             onDownload = { prepareDownload(ids = selection.ids) })
-        val matchingTracks = if (query.isBlank()) tracks else searchTracks?.tracks.orEmpty()
+        val searchSnapshot = searchTracks?.takeIf { it.contentRevision == contentRevision }
+        val matchingTracks = if (query.isBlank()) tracks else {
+            searchSnapshot?.tracks?.takeIf { it.size > tracks.size } ?: tracks
+        }
         val displayed = remember(matchingTracks, query) { sourceDetailMatches(matchingTracks, query) }
         val displayedMetadata = remember(displayed) { displayed.map { it.value.toMediaMetadata() } }
         val favoriteIds = rememberFavoriteTrackIds(displayedMetadata)
@@ -379,7 +387,22 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
                 ?.takeIf { it.supportsNeteaseSongActions }?.trackRef
         } else null
         val bottomPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
-        val count = maxOf(playlist?.trackCount ?: album?.trackCount ?: 0, tracks.size)
+        val declaredCount = playlist?.trackCount ?: album?.trackCount ?: 0
+        val count = maxOf(declaredCount, tracks.size)
+        val searchResultsLoading = query.isNotBlank() && (state.error != null || searchError != null ||
+            searchSnapshot?.isComplete != true && (state.loading || state.hasMore || searching))
+        // Unknown metadata belongs to the collection, not to the filtered result count.
+        val pendingTrackCount = when {
+            state.detail?.ref != ref || state.error != null -> 0
+            query.isBlank() && ref is PlaylistRef && (state.loading || state.hasMore) ->
+                (count - tracks.size).coerceAtLeast(0)
+            query.isBlank() && state.loading ->
+                (count - tracks.size).coerceIn(0, 30)
+            query.isNotBlank() && (state.loading || state.hasMore) &&
+                searchSnapshot?.isComplete != true && searchError == null ->
+                if (declaredCount > 0) (declaredCount - matchingTracks.size).coerceAtLeast(0) else 4
+            else -> 0
+        }
         val detailMenu = detailMenuItems(
             downloadTitle = stringResource(R.string.album_download_all, count),
             subscriptionTitle = stringResource(if (ref is PlaylistRef) {
@@ -398,12 +421,31 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
             uiData = SongListDetailData(title = title, count = count,
                 cover = state.artworkUrl, creatorName = state.detail?.let(::sourceItemSubtitle).orEmpty(),
                 tracks = displayedMetadata, isSubscribed = saved == true, playCount = playlist?.playCount),
-            isLoading = state.loading && (state.detail == null || query.isNotBlank()) || searching,
-            onPlayAll = { if (tracks.isNotEmpty()) playAll(tracks, 0) },
+            isLoading = state.loading && state.detail == null,
+            onPlayAll = {
+                val selectedQuery = query
+                if (selectedQuery.isBlank()) {
+                    if (tracks.isNotEmpty()) playAll(tracks, 0)
+                } else scope.launch {
+                    try {
+                        val snapshot = viewModel.detailTracks(ref, pageSize = 100)
+                        val matches = sourceDetailMatches(snapshot.tracks, selectedQuery).map { it.value }
+                        if (matches.isNotEmpty()) playSearch(matches, 0)
+                    } catch (cancelled: CancellationException) { throw cancelled
+                    } catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
+                }
+            },
             onShufflePlay = {
-                if (query.isNotBlank()) {
-                    val matches = displayed.map { it.value }
-                    if (matches.isNotEmpty()) shuffleSearch(matches, 0)
+                val selectedQuery = query
+                if (selectedQuery.isNotBlank()) {
+                    scope.launch {
+                        try {
+                            val snapshot = viewModel.detailTracks(ref, pageSize = 100)
+                            val matches = sourceDetailMatches(snapshot.tracks, selectedQuery).map { it.value }
+                            if (matches.isNotEmpty()) shuffleSearch(matches, 0)
+                        } catch (cancelled: CancellationException) { throw cancelled
+                        } catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
+                    }
                 } else if (tracks.isNotEmpty()) shuffle(tracks, 0)
             },
             onHeaderAction = toggleCollection,
@@ -414,12 +456,14 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
             onTrackClick = { metadata, index ->
                 if (selection.active) selection.toggle(metadata.mediaId)
                 else displayed.getOrNull(index)?.let { selected ->
-                    val snapshot = searchTracks.takeIf { query.isNotBlank() }
-                    if (snapshot == null) play(tracks, selected.index)
+                    val selectedQuery = query
+                    if (selectedQuery.isBlank()) play(tracks, selected.index)
                     else scope.launch {
                         try {
-                            viewModel.ensureDetailCurrent(snapshot)
-                            playSearch(snapshot.tracks, selected.index)
+                            val complete = viewModel.detailTracks(ref, pageSize = 100)
+                            val matches = sourceDetailMatches(complete.tracks, selectedQuery).map { it.value }
+                            val queueIndex = matches.indexOfFirst { it.ref == selected.value.ref }
+                            if (queueIndex >= 0) playSearch(matches, queueIndex)
                         } catch (cancelled: CancellationException) { throw cancelled
                         } catch (_: Exception) { Toast.makeText(context, R.string.load_failed, Toast.LENGTH_SHORT).show() }
                     }
@@ -438,12 +482,17 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
             showTrackArtwork = ref !is AlbumRef, hasLoadedContent = state.detail != null,
             listState = listState,
             favoriteTrackIds = favoriteIds,
+            loadingTrackCount = pendingTrackCount,
+            searchResultsLoading = searchResultsLoading,
             trackNumber = { _, index -> (displayed.getOrNull(index)?.index ?: index) + 1 },
             footer = {
-                if (query.isBlank()) sourceDetailPagingStatus(state, viewModel::refresh, viewModel::loadMore)
-                else searchError?.let { error -> item("source-detail-search-error") {
-                    GlasmioListRow(sourceErrorMessage(error), trailing = { Text("重试") }, onClick = { searchAttempt++ })
-                } }
+                if (query.isBlank()) sourceDetailPagingStatus(state, viewModel::refresh, viewModel::loadMore,
+                    automatic = ref !is PlaylistRef, showLoading = pendingTrackCount == 0)
+                else {
+                    searchError?.let { error -> item("source-detail-search-error") {
+                        GlasmioListRow(sourceErrorMessage(error), trailing = { Text("重试") }, onClick = { searchAttempt++ })
+                    } }
+                }
             },
             overlayContent = {
                 locateTrack?.let { track ->
@@ -479,23 +528,58 @@ fun SourceContentScreen(ref: ContentRef, viewModel: SourceContentViewModel = hil
 internal fun sourceDetailMatches(tracks: List<Track>, query: String): List<IndexedValue<Track>> {
     val terms = query.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
     return tracks.withIndex().filter { (_, track) ->
-        val text = listOf(track.title, track.artists.joinToString(" ") { it.name }, track.album.title).joinToString(" ")
-        terms.all { text.contains(it, ignoreCase = true) }
+        terms.all { term ->
+            track.title.contains(term, ignoreCase = true) ||
+                track.artists.any { it.name.contains(term, ignoreCase = true) } ||
+                track.album.title.contains(term, ignoreCase = true)
+        }
     }
 }
 
-private fun LazyListScope.sourceDetailPagingStatus(state: SourceContentState, onRetry: () -> Unit, onMore: () -> Unit, automatic: Boolean = true) {
-    val detailRef = state.detail?.ref
-    if (state.loading && state.items.isEmpty() && !state.hasMore && state.error == null &&
-        (detailRef is PlaylistRef || detailRef is AlbumRef)) item("source-detail-first-page-loading") { LoadingView() }
+private fun LazyListScope.sourceDetailPagingStatus(
+    state: SourceContentState,
+    onRetry: () -> Unit,
+    onMore: () -> Unit,
+    automatic: Boolean = true,
+    showLoading: Boolean = true,
+    horizontalPadding: Dp = 0.dp,
+) {
+    if (showLoading && state.loading && state.items.isEmpty() && !state.hasMore && state.error == null) {
+        sourceTrackSkeletons(state, "source-detail-first-page-loading", horizontalPadding)
+    }
     if (state.error != null) item("source-detail-retry") {
         GlasmioListRow(sourceErrorMessage(state.error), trailing = { Text("重试") }, onClick = onRetry)
     }
-    if (state.hasMore && state.error == null) item("source-detail-append:${state.nextOffset}") {
-        if (automatic) LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision,
-            state.nextOffset, state.nextCursor, state.loading) { if (!state.loading) onMore() }
-        else if (!state.loading) GlasmioListRow(stringResource(R.string.artist_catalog_search_continue), onClick = onMore)
-        if (state.loading) LoadingView()
+    if (state.hasMore && state.error == null && (automatic || showLoading)) {
+        item("source-detail-append:${state.nextOffset}") {
+            if (automatic) LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision,
+                state.nextOffset, state.nextCursor, state.loading) { if (!state.loading) onMore() }
+            else if (!state.loading) GlasmioListRow(stringResource(R.string.artist_catalog_search_continue), onClick = onMore)
+        }
+        if (showLoading && state.loading) {
+            sourceTrackSkeletons(state, "source-detail-append-loading", horizontalPadding)
+        }
+    }
+}
+
+private fun LazyListScope.sourceTrackSkeletons(
+    state: SourceContentState,
+    key: String,
+    horizontalPadding: Dp = 0.dp,
+) {
+    val total = when (val detail = state.detail) {
+        is SourceItem.PlaylistItem -> detail.playlist.trackCount
+        is SourceItem.AlbumItem -> detail.album.trackCount
+        is SourceItem.ArtistItem -> detail.artist.trackCount
+        is SourceItem.TrackItem -> 1
+        null -> null
+    }
+    val loadedCount = state.items.count { it is SourceItem.TrackItem }
+    val count = total?.takeIf { it > 0 }?.let { (it - loadedCount).coerceAtLeast(0) } ?: 4
+    items(count = count, key = { index -> "$key:$index" }, contentType = { "track-skeleton" }) {
+        ShimmerHost(Modifier.padding(horizontal = horizontalPadding)) {
+            TrackItemShimmer(isTablet = false, flatDetailStyle = true)
+        }
     }
 }
 
@@ -752,7 +836,7 @@ fun SourceArtistCatalogScreen(ref: ArtistRef, albums: Boolean, viewModel: Source
             }
             sourceDetailPagingStatus(state, viewModel::refresh, {
                 if (query.text.isBlank()) viewModel.loadMore() else viewModel.continueArtistCatalogSearch()
-            }, automatic = false)
+            }, automatic = false, horizontalPadding = if (landscape) 32.dp else 20.dp)
         }
         if (!state.loading && state.error == null && (if (albums) records.isEmpty() && !state.albumsHasMore else tracks.isEmpty() && !state.hasMore)) {
             item("artist-catalog-empty") {
@@ -760,7 +844,7 @@ fun SourceArtistCatalogScreen(ref: ArtistRef, albums: Boolean, viewModel: Source
                     modifier = Modifier.padding(20.dp), color = LocalGlassColors.current.secondaryContent)
             }
         }
-        if (state.loading) item("artist-catalog-loading") { LoadingView() }
+        if (albums && state.loading) item("artist-catalog-loading") { LoadingView() }
         if (albums && state.error != null) item("artist-catalog-error") {
             GlasmioListRow(sourceErrorMessage(state.error!!), onClick = viewModel::refresh)
         }
@@ -768,19 +852,30 @@ fun SourceArtistCatalogScreen(ref: ArtistRef, albums: Boolean, viewModel: Source
     SourceTrackActions(menu, { menu = null }, viewModel)
 }
 
-internal fun LazyListScope.sourceContentStatus(state: SourceContentState, onRetry: () -> Unit, onMore: () -> Unit) {
-    if (state.loading) item("source-content-loading") { LoadingView() }
+internal fun LazyListScope.sourceContentStatus(
+    state: SourceContentState,
+    onRetry: () -> Unit,
+    onMore: () -> Unit,
+    trackRows: Boolean = state.items.any { it is SourceItem.TrackItem } || state.detail is SourceItem.TrackItem,
+) {
+    if (state.loading) {
+        if (trackRows) sourceTrackSkeletons(state, "source-content-loading")
+        else item("source-content-loading") { LoadingView() }
+    }
     state.error?.let { error -> item("source-content-error") { GlasmioGroupedList(Modifier.padding(top = 10.dp)) {
         GlasmioListRow(sourceErrorMessage(error), trailing = { Text("重试") }, onClick = onRetry)
     } } }
     if (!state.loading && !state.hasMore && !state.albumsHasMore && state.error == null && state.items.isEmpty() && state.sections.isEmpty()) item("source-content-empty") {
         GlasmioGroupedList(Modifier.padding(top = 10.dp)) { GlasmioListRow("暂无内容", showTopSeparator = false, showDisclosure = false) }
     }
-    if (!state.loading && state.hasMore && state.error == null) item("source-content-more:${state.nextOffset}") {
-        LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision, state.nextOffset, state.nextCursor) {
-            onMore()
+    if (!state.loading && state.hasMore && state.error == null) {
+        item("source-content-more:${state.nextOffset}") {
+            LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision, state.nextOffset, state.nextCursor) {
+                onMore()
+            }
+            if (!trackRows) LoadingView()
         }
-        LoadingView()
+        if (trackRows) sourceTrackSkeletons(state, "source-content-more-loading")
     }
 }
 

@@ -23,6 +23,7 @@ import com.ljyh.mei.data.model.metadata
 import com.ljyh.mei.data.model.toMediaItem
 import com.ljyh.mei.data.model.toMediaMetadata
 import com.ljyh.mei.di.AppDatabase
+import com.ljyh.mei.di.dao.SourceTrackSearchIndexDao
 import com.ljyh.mei.constants.CookieKey
 import com.ljyh.mei.constants.UserIdKey
 import com.ljyh.mei.utils.dataStore
@@ -44,8 +45,17 @@ import com.ljyh.mei.source.api.SourceException
 import com.ljyh.mei.source.api.SourceCoreEffectCapability
 import com.ljyh.mei.source.script.ScriptMusicProvider
 import com.ljyh.mei.source.script.ScriptNetworkPolicy
+import com.ljyh.mei.source.core.SourcePreferences
+import com.ljyh.mei.ui.screen.source.SourceContentRequest
+import com.ljyh.mei.ui.screen.source.SourceContentViewModel
+import com.ljyh.mei.ui.screen.source.sourceDetailMatches
+import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
 import com.ljyh.mei.playback.DownloadSourceEntryPoint
 import com.ljyh.mei.playback.PlaybackArtistSnapshot
 import com.ljyh.mei.playback.PlaybackItemSnapshot
@@ -73,6 +83,104 @@ import org.junit.runner.RunWith
 class SourceCompatibilityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    @Test fun installedPlaylistPersistentCacheSupportsColdAndWarmReads(): Unit = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("playlistCacheLive") == "true")
+        val phase = args.getString("playlistCachePhase") ?: "both"
+        require(phase in setOf("cold", "warm", "both"))
+        val providerId = args.getString("playlistCacheProviderId") ?: ProviderIds.NETEASE
+        val playlist = PlaylistRef(providerId, args.getString("playlistCacheId") ?: "945595972")
+        val query = args.getString("playlistCacheQuery") ?: "fairy"
+        val router = EntryPointAccessors.fromApplication(context, DownloadSourceEntryPoint::class.java).sourceRouter()
+        withTimeout(20_000) { router.registry.awaitInitialized() }
+        val provider = router.registry.requireProvider(providerId) as ScriptMusicProvider
+        val configuration = provider.platformConfiguration().toMap()
+        val revision = provider.accountRevision.first()
+        val dao = AppDatabase.getDatabase(context).sourceTrackSearchIndexDao()
+        val persistentReadRows = AtomicInteger()
+        val measuredDao = object : SourceTrackSearchIndexDao by dao {
+            override suspend fun getIndex(providerId: String, providerInstanceId: String, providerVersion: String,
+                accountRevision: String, playlistId: String, playlistFingerprint: String) =
+                dao.getIndex(providerId, providerInstanceId, providerVersion, accountRevision, playlistId,
+                    playlistFingerprint).also { persistentReadRows.addAndGet(it.size) }
+        }
+        suspend fun persistedRows(): List<com.ljyh.mei.data.model.room.SourceTrackSearchIndex> {
+            val ids = checkNotNull((provider as CatalogIndexCapability).completeTrackIds(playlist.playlistId)).ids
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            ids.forEach { digest.update(it.trackId.toByteArray(Charsets.UTF_8)); digest.update(0.toByte()) }
+            val fingerprint = "${ids.size}:" + digest.digest().joinToString("") { "%02x".format(it) }
+            return dao.getIndex(providerId, provider.instanceId.value, provider.version,
+                revision.orEmpty(), playlist.playlistId, fingerprint)
+        }
+        val policy = ScriptMusicProvider::class.java.getDeclaredField("network")
+            .apply { isAccessible = true }.get(provider) as ScriptNetworkPolicy
+        val clientField = ScriptNetworkPolicy::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val original = clientField.get(policy) as OkHttpClient
+        val detailRequests = AtomicInteger()
+        var expectedTracks: List<com.ljyh.mei.source.api.Track>? = null
+        try {
+            clientField.set(policy, original.newBuilder().addInterceptor { chain ->
+                val request = chain.request()
+                if (request.url.encodedPath.endsWith("/song/detail")) detailRequests.incrementAndGet()
+                chain.proceed(request)
+            }.build())
+            for (currentPhase in if (phase == "both") listOf("cold", "warm") else listOf(phase)) {
+                val firstPagePrefetched = phase == "both" && currentPhase == "warm"
+                if (firstPagePrefetched) {
+                    // Refresh the source identities while preserving Room and the existing account.
+                    withTimeout(60_000) { router.playlistTracks(playlist, PageRequest(limit = 30, refresh = true)) }
+                    val persisted = persistedRows()
+                    assertTrue("Warm verification requires a previously completed persistent playlist", persisted.isNotEmpty())
+                    assertEquals(persisted.first().expectedCount, persisted.size)
+                }
+                val beforeDetails = detailRequests.get()
+                val beforePersistentRows = persistentReadRows.get()
+                val started = android.os.SystemClock.elapsedRealtime()
+                val model = withContext(Dispatchers.Main.immediate) {
+                    SourceContentViewModel(router, SourcePreferences(context.dataStore), router.registry,
+                        searchIndexDao = measuredDao).also {
+                        it.open(SourceContentRequest.Detail(playlist))
+                        if (currentPhase == "cold") it.refresh()
+                    }
+                }
+                try {
+                    val complete = withTimeout(240_000) {
+                        val first = model.state.first {
+                            !it.loading && !it.refreshing && (it.detail?.ref == playlist || it.error != null)
+                        }
+                        first.error?.let { throw SourceException(it) }
+                        model.detailTracks(playlist, pageSize = 100,
+                            usePersistentCache = currentPhase != "cold")
+                    }
+                    val elapsedMs = android.os.SystemClock.elapsedRealtime() - started
+                    val matchStarted = System.nanoTime()
+                    val matches = sourceDetailMatches(complete.tracks, query)
+                    val matchingMicros = (System.nanoTime() - matchStarted) / 1_000
+                    val reads = detailRequests.get() - beforeDetails
+                    val cachedReadRows = persistentReadRows.get() - beforePersistentRows
+                    val persisted = persistedRows()
+                    assertTrue("The installed source must return playlist tracks", complete.tracks.isNotEmpty())
+                    assertEquals("A complete playlist must be durable", complete.tracks.size, persisted.size)
+                    assertTrue("Every cached track must retain full metadata", persisted.all { it.trackJson.isNotBlank() })
+                    if (currentPhase == "cold") expectedTracks = complete.tracks
+                    else {
+                        expectedTracks?.let { assertEquals("Persistent metadata must preserve every track field", it, complete.tracks) }
+                        assertTrue("Warm hydration must read the full persistent playlist", cachedReadRows >= complete.tracks.size)
+                        assertEquals("Warm playlist hydration must avoid song-detail HTTP requests", 0, reads)
+                    }
+                    instrumentation.sendStatus(0, Bundle().apply { putString("stream",
+                        "Playlist persistent cache phase=$currentPhase rows=${complete.tracks.size} matches=${matches.size} elapsedMs=$elapsedMs localMatchingMicros=$matchingMicros detailHttp=$reads persistentReadRows=$cachedReadRows sameProcessVm=${phase == "both"} firstPagePrefetched=$firstPagePrefetched\n") })
+                } finally {
+                    model.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+                }
+            }
+        } finally {
+            clientField.set(policy, original)
+            assertEquals("Playlist reads must preserve source configuration", configuration, provider.platformConfiguration())
+            assertEquals("Playlist reads must preserve account revision", revision, provider.accountRevision.first())
+        }
+    }
 
     @Test fun installedNeteaseCloudAndPodcastsUseBoundedReadPaths(): Unit = runBlocking {
         val args = InstrumentationRegistry.getArguments()

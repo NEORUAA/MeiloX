@@ -13,6 +13,8 @@ import androidx.paging.PagingSource
 import androidx.paging.cachedIn
 import com.google.gson.Gson
 import com.ljyh.mei.data.model.MediaMetadata
+import com.ljyh.mei.data.model.room.SourceTrackSearchIndex
+import com.ljyh.mei.di.dao.SourceTrackSearchIndexDao
 import com.ljyh.mei.utils.playlistCoverWithoutOverlays
 import com.ljyh.mei.data.model.PlaylistDetail
 import com.ljyh.mei.data.model.PlaylistOrderChangedException
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -739,6 +742,107 @@ class PlaylistContentTest {
     }
 
     @Test
+    fun persistedPlaylistMetadataSurvivesViewModelRecreationAndRejectsChangedCanonicalIds() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = CachedDetailProvider(65)
+        val registry = ProviderRegistry(listOf(provider))
+        val cache = MemorySearchIndexDao()
+        val ref = PlaylistRef(provider.id, "playlist")
+        fun model() = SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()),
+            registry, searchIndexDao = cache)
+        var current = model()
+        try {
+            current.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertEquals(provider.tracks, current.detailTracks(ref, pageSize = 100).tracks)
+            assertEquals(provider.tracks.size, cache.entries.size)
+            current.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+
+            provider.batchRequests.clear()
+            current = model()
+            current.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertEquals(provider.tracks, current.detailTracks(ref, pageSize = 100).tracks)
+            assertTrue(provider.batchRequests.isEmpty())
+            current.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+
+            // Change only the tail so first-page validation alone cannot accept the old cache.
+            provider.tracks = provider.tracks.dropLast(2) + provider.tracks.takeLast(2).reversed()
+            current = model()
+            current.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertEquals(provider.tracks, current.detailTracks(ref, pageSize = 100).tracks)
+            assertEquals(provider.tracks.drop(30).map { it.ref }, provider.batchRequests.flatten())
+        } finally {
+            try { current.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun persistedPartialPlaylistMetadataResumesAtTheFirstMissingCanonicalPosition() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = CachedDetailProvider(235).apply { failingTrackId = tracks[130].ref.trackId }
+        val registry = ProviderRegistry(listOf(provider))
+        val cache = MemorySearchIndexDao()
+        val ref = PlaylistRef(provider.id, "playlist")
+        fun model() = SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()),
+            registry, searchIndexDao = cache)
+        var current = model()
+        try {
+            current.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertTrue(runCatching { current.detailTracks(ref, pageSize = 100) }.isFailure)
+            assertEquals(130, cache.entries.size)
+            current.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+
+            provider.failingTrackId = null
+            provider.batchRequests.clear()
+            current = model()
+            current.open(SourceContentRequest.Detail(ref))
+            runCurrent()
+            assertEquals(provider.tracks, current.detailTracks(ref, pageSize = 100).tracks)
+            assertEquals(provider.tracks.drop(130).map { it.ref }, provider.batchRequests.flatten())
+            assertEquals(provider.tracks.size, cache.entries.size)
+        } finally {
+            try { current.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
+    fun missingPlaylistMetadataFallsBackToOpaqueBrowsingWithoutTruncatingAvailableTracks() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val provider = CachedDetailProvider(65).apply {
+            missingTrackId = tracks[4].ref.trackId
+            useOpaqueCursors = true
+        }
+        val registry = ProviderRegistry(listOf(provider))
+        val cache = MemorySearchIndexDao()
+        val ref = PlaylistRef(provider.id, "playlist")
+        val model = SourceContentViewModel(SourceRouter(registry), SourcePreferences(MemoryPreferences()),
+            registry, searchIndexDao = cache)
+        val available = provider.tracks.filterNot { it.ref.trackId == provider.missingTrackId }
+        try {
+            model.open(SourceContentRequest.Detail(ref))
+            val complete = model.state.first {
+                !it.loading && (!it.hasMore && it.items.size == available.size || it.error != null)
+            }
+            assertNull(complete.error)
+            assertEquals(available, complete.items.filterIsInstance<SourceItem.TrackItem>().map { it.track })
+            assertEquals(provider.tracks.last().ref, complete.items.last().ref)
+            assertTrue(provider.pageRequests.any { it.cursor == "page:30" && it.offset == 29 })
+            assertEquals(available, model.detailTracks(ref, pageSize = 100).tracks)
+            assertEquals(provider.tracks.last().ref,
+                com.ljyh.mei.ui.screen.source.sourceDetailMatches(available, "Track 65").single().value.ref)
+            assertTrue("A collection missing canonical metadata must not become a complete persistent index", cache.entries.isEmpty())
+        } finally {
+            try { model.viewModelScope.coroutineContext[Job]?.cancelAndJoin() }
+            finally { Dispatchers.resetMain() }
+        }
+    }
+
+    @Test
     fun cachedAndFetchedTracksFollowCanonicalIdsWithoutRefetchingCachedRows() = runBlocking {
         val requests = mutableListOf<List<String>>()
         val source = PlaylistTrackSource(
@@ -796,6 +900,73 @@ class PlaylistContentTest {
         override val data = MutableStateFlow(emptyPreferences())
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
             transform(data.value).also { data.value = it }
+    }
+
+    private class MemorySearchIndexDao : SourceTrackSearchIndexDao {
+        var entries = emptyList<SourceTrackSearchIndex>()
+            private set
+
+        override suspend fun getIndex(providerId: String, providerInstanceId: String, providerVersion: String,
+            accountRevision: String, playlistId: String, playlistFingerprint: String) =
+            entries.filter { it.providerId == providerId && it.providerInstanceId == providerInstanceId &&
+                it.providerVersion == providerVersion && it.accountRevision == accountRevision &&
+                it.playlistId == playlistId && it.playlistFingerprint == playlistFingerprint }.sortedBy { it.position }
+
+        override suspend fun upsert(entries: List<SourceTrackSearchIndex>) {
+            this.entries = (this.entries + entries).associateBy {
+                listOf(it.providerId, it.providerInstanceId, it.providerVersion, it.accountRevision,
+                    it.playlistId, it.playlistFingerprint, it.position.toString())
+            }.values.toList()
+        }
+
+        override suspend fun deleteIndex(providerId: String, providerInstanceId: String, providerVersion: String,
+            accountRevision: String, playlistId: String) {
+            entries = entries.filterNot {
+                it.providerId == providerId && it.providerInstanceId == providerInstanceId &&
+                    it.providerVersion == providerVersion && it.accountRevision == accountRevision && it.playlistId == playlistId
+            }
+        }
+
+    }
+
+    private class CachedDetailProvider(count: Int) : MusicProvider, PlaylistCapability,
+        BatchCatalogCapability, CatalogIndexCapability {
+        override val id = "cached-detail-fixture"
+        override val displayName = "Cached detail fixture"
+        override val capabilities = setOf(SourceCapability.PLAYLIST, SourceCapability.TRACK)
+        var tracks = (1..count).map { index ->
+            Track(TrackRef(id, "track/$index"), "Track $index",
+                listOf(SourceArtist("Artist $index", ArtistRef(id, "artist/$index"))),
+                SourceAlbum("Album $index", AlbumRef(id, "album/$index")), durationMs = 180_000L + index,
+                artworkUrl = "https://example.com/$index.jpg", isrc = "ISRC$index", version = "Live", explicit = true)
+        }
+        var failingTrackId: String? = null
+        var missingTrackId: String? = null
+        var useOpaqueCursors = false
+        val pageRequests = mutableListOf<PageRequest>()
+        val batchRequests = mutableListOf<List<TrackRef>>()
+        override suspend fun playlist(ref: PlaylistRef) = SourcePlaylist(ref, "Cached playlist", trackCount = tracks.size)
+        override suspend fun playlistTracks(ref: PlaylistRef, page: PageRequest): SourcePage<Track> {
+            pageRequests += page
+            val offset = if (useOpaqueCursors) {
+                require(page.offset == 0 || page.cursor != null)
+                page.cursor?.removePrefix("page:")?.toInt() ?: page.offset
+            } else page.offset
+            val requested = tracks.drop(offset).take(page.limit)
+            val items = requested.filterNot { it.ref.trackId == missingTrackId }
+            val nextOffset = offset + requested.size
+            val hasMore = nextOffset < tracks.size
+            return SourcePage(items, hasMore,
+                if (useOpaqueCursors && hasMore) "page:$nextOffset" else null)
+        }
+        override suspend fun completeTrackIds(playlistId: String, collection: LibraryCollection?) =
+            SourceTrackIndex(playlistId, tracks.map { it.ref })
+        override suspend fun getTracks(refs: List<TrackRef>): List<Track> {
+            batchRequests += refs.toList()
+            if (refs.firstOrNull()?.trackId == failingTrackId) throw SourceException(SourceErrorCode.NETWORK)
+            val indexed = tracks.filterNot { it.ref.trackId == missingTrackId }.associateBy { it.ref }
+            return refs.mapNotNull(indexed::get)
+        }
     }
 
     private class DetailProvider : MusicProvider, PlaylistCapability, AlbumCapability,

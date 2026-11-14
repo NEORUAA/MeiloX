@@ -164,6 +164,7 @@ import com.ljyh.mei.ui.component.playlist.FavoriteTrackStar
 import com.ljyh.mei.source.api.TrackRefCodec
 import com.ljyh.mei.ui.component.item.HomeSongListRow
 import com.ljyh.mei.ui.component.item.ThreeRowSongList
+import com.ljyh.mei.ui.component.shimmer.ShimmerHost
 import com.ljyh.mei.ui.component.utils.rememberDeviceInfo
 import com.ljyh.mei.ui.local.LocalNavController
 import com.ljyh.mei.ui.local.LocalPlayerAwareWindowInsets
@@ -174,6 +175,7 @@ import com.ljyh.mei.ui.navigation.meiloxHeaderAction
 import com.ljyh.mei.ui.screen.Screen
 import com.ljyh.mei.ui.screen.search.browsableProviders
 import com.ljyh.mei.ui.screen.search.libraryProviders
+import com.ljyh.mei.ui.screen.playlist.component.TrackItemShimmer
 import io.github.neoruaa.glasmio.core.LocalGlassColors
 import io.github.neoruaa.glasmio.core.swipeBackExcluded
 import io.github.neoruaa.glasmio.icons.SfIcon
@@ -767,7 +769,11 @@ fun SourceLibraryScreen(
             }
         }
     }
-    fun more() { if (ownState.hasMore) viewModel.loadMore(); if (extra?.hasMore == true) createdViewModel.loadMore() }
+    fun more() {
+        val pageSize = if (query.text.isBlank()) 30 else 100
+        if (ownState.hasMore) viewModel.loadMore(pageSize)
+        if (extra?.hasMore == true) createdViewModel.loadMore(pageSize)
+    }
     LaunchedEffect(query.text, ownState.nextCursor, extra?.nextCursor, combined.loading) {
         if (query.text.isNotBlank() && !combined.loading && combined.error == null && combined.hasMore) { delay(250); more() }
     }
@@ -878,6 +884,7 @@ fun SourceLibraryScreen(
                 }
                     if (hasCoreCollection) sourceBrowseStatus(combined, filtered.size, emptyText,
                         emptySymbol = if (showArtists) SfSymbol.PersonFilled else page.symbol,
+                        trackSkeleton = page == LibraryPage.Songs && !showArtists,
                         onRetry = ::refresh, onLoadMore = ::more, onConfigure = { openSourceConfiguration(viewModel.pluginId(), nav) })
                     if (mergePodcasts && podcastViewModel != null && podcastState != null) {
                         item("source-library-podcasts-heading") { Box(Modifier.padding(bottom = 12.dp)) { LibraryCollectionHeading(stringResource(R.string.library_page_podcasts)) } }
@@ -1005,11 +1012,14 @@ private fun LazyListScope.sourceBrowseStatus(
     emptyText: String,
     horizontalPadding: Dp = 0.dp,
     emptySymbol: SfSymbol? = null,
+    trackSkeleton: Boolean = false,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onConfigure: () -> Unit,
 ) {
-    if (state.loading) item("source-content-loading") { SourceBrowseLoading() }
+    if (state.loading) item("source-content-loading") {
+        if (trackSkeleton) SourceTrackBrowseLoading() else SourceBrowseLoading()
+    }
     state.error?.let { error ->
         item("source-content-error") {
             GlasmioGroupedList(Modifier.padding(horizontal = horizontalPadding, vertical = 10.dp)) {
@@ -1031,7 +1041,7 @@ private fun LazyListScope.sourceBrowseStatus(
         LaunchedEffect(state.providerId, state.providerVersion, state.accountRevision, state.nextOffset, state.nextCursor) {
             onLoadMore()
         }
-        SourceBrowseLoading()
+        if (trackSkeleton) SourceTrackBrowseLoading() else SourceBrowseLoading()
     }
 }
 
@@ -1039,6 +1049,15 @@ private fun LazyListScope.sourceBrowseStatus(
 private fun SourceBrowseLoading() {
     Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(modifier = Modifier.size(24.dp), color = LocalGlassColors.current.accent, strokeWidth = 2.dp)
+    }
+}
+
+@Composable
+private fun SourceTrackBrowseLoading() {
+    ShimmerHost {
+        repeat(3) {
+            TrackItemShimmer(isTablet = false, flatDetailStyle = true, showArtwork = true)
+        }
     }
 }
 
