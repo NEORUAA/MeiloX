@@ -5,12 +5,14 @@ import android.net.Uri
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.ljyh.mei.source.api.AudioResource
 import com.ljyh.mei.source.api.SourceErrorCode
 import com.ljyh.mei.source.api.SourceException
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,6 +21,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Request
 import okhttp3.Response
+import timber.log.Timber
 
 /** Only a host-created opaque handle reaches Media3; scripts never receive file paths. */
 object ScriptAudioResources {
@@ -80,7 +83,7 @@ class ScriptAudioDataSource : DataSource {
             val calls = if (entry.file == null) AudioCalls(entry.policy.audioClient) else null
             val source = if (calls == null) FileDataSource() else OkHttpDataSource.Factory(calls).createDataSource()
             listeners.forEach(source::addTransferListener)
-            Transfer(source, calls).also { transfer = it; opaqueUri = dataSpec.uri }
+            Transfer(source, calls, entry).also { transfer = it; opaqueUri = dataSpec.uri }
         }
         // Caller-supplied headers must never override the validated plugin request headers.
         val realSpec = dataSpec.buildUpon()
@@ -91,7 +94,7 @@ class ScriptAudioDataSource : DataSource {
             val closed = synchronized(monitor) { current.opening = false; current.closed }
             if (closed) throw SourceException(SourceErrorCode.CANCELLED)
             length
-        } catch (_: java.io.IOException) {
+        } catch (error: IOException) {
             current.calls?.cancel()
             runCatching { current.source.close() }
             val closed = synchronized(monitor) {
@@ -99,8 +102,22 @@ class ScriptAudioDataSource : DataSource {
                 if (transfer === current) { transfer = null; opaqueUri = null }
                 current.closed
             }
-            throw SourceException(if (closed) SourceErrorCode.CANCELLED else SourceErrorCode.NETWORK,
-                "Source audio request failed")
+            val wrapped = SourceException(
+                if (closed) SourceErrorCode.CANCELLED else SourceErrorCode.NETWORK,
+                "Source audio request failed",
+            )
+            runCatching { wrapped.initCause(error) }
+            Timber.tag("ScriptAudioDataSource").e(
+                "Audio open failed plugin=%s host=%s quality=%s cachePolicy=%s httpCode=%s errorType=%s errorMessage=%s",
+                entry.pluginId,
+                entry.resource.uri.toUriOrNull()?.host,
+                entry.resource.quality,
+                entry.resource.cachePolicy,
+                (error as? HttpDataSource.InvalidResponseCodeException)?.responseCode,
+                error.javaClass.simpleName,
+                error.message?.replace(Regex("https?://\\S+"), "<url>")?.take(240),
+            )
+            throw wrapped
         }
     }
 
@@ -109,7 +126,20 @@ class ScriptAudioDataSource : DataSource {
             (transfer ?: throw IllegalStateException("Source is not open")).also { it.reading = true }
         }
         return try { current.source.read(buffer, offset, length)
-        } catch (_: java.io.IOException) { throw SourceException(SourceErrorCode.NETWORK, "Source audio read failed")
+        } catch (error: IOException) {
+            val wrapped = SourceException(SourceErrorCode.NETWORK, "Source audio read failed")
+            runCatching { wrapped.initCause(error) }
+            val entry = current.entry
+            Timber.tag("ScriptAudioDataSource").e(
+                "Audio read failed plugin=%s host=%s quality=%s httpCode=%s errorType=%s errorMessage=%s",
+                entry.pluginId,
+                entry.resource.uri.toUriOrNull()?.host,
+                entry.resource.quality,
+                (error as? HttpDataSource.InvalidResponseCodeException)?.responseCode,
+                error.javaClass.simpleName,
+                error.message?.replace(Regex("https?://\\S+"), "<url>")?.take(240),
+            )
+            throw wrapped
         } finally {
             val closed = synchronized(monitor) { current.reading = false; current.closed }
             if (closed) runCatching { current.source.close() }
@@ -139,7 +169,11 @@ class ScriptAudioDataSource : DataSource {
         close()
     }
 
-    private class Transfer(val source: DataSource, val calls: AudioCalls?) {
+    private class Transfer(
+        val source: DataSource,
+        val calls: AudioCalls?,
+        val entry: ScriptAudioResources.Entry,
+    ) {
         var opening = true
         var reading = false
         var closed = false
@@ -195,3 +229,5 @@ class ScriptAudioDataSource : DataSource {
 
     companion object { fun accepts(uri: Uri): Boolean = uri.scheme == "mei-source" }
 }
+
+private fun String.toUriOrNull(): Uri? = runCatching { Uri.parse(this) }.getOrNull()

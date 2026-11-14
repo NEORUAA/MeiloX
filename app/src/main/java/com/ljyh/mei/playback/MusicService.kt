@@ -1432,9 +1432,32 @@ class MusicService : MediaLibraryService(),
         failureProgressJob = null
         playbackFailures.resetProgress()
         val causeTypes = generateSequence(error.cause) { it.cause }.take(16)
-            .joinToString(" -> ") { it.javaClass.simpleName }
+            .joinToString(" -> ") { cause ->
+                val message = cause.message
+                    ?.replace(Regex("https?://\\S+"), "<url>")
+                    ?.take(240)
+                    ?.takeIf(String::isNotBlank)
+                buildString {
+                    append(cause.javaClass.simpleName)
+                    if (message != null) append(":").append(message)
+                }
+            }
+        val resolution = currentPlaybackResolution.value
+        val resource = resolution?.resource
         Timber.tag("MusicService").e(
-            "Player Error: %s, %s, causes=%s", error.errorCodeName, error.message, causeTypes,
+            "Player Error: %s, %s, mediaId=%s, causes=%s, originProvider=%s, actualProvider=%s, " +
+                "instance=%s, quality=%s, cachePolicy=%s, resourceScheme=%s, resourceHost=%s",
+            error.errorCodeName,
+            error.message?.replace(Regex("https?://\\S+"), "<url>")?.take(240),
+            player.currentMediaItem?.mediaId,
+            causeTypes,
+            resolution?.originTrackRef?.providerId,
+            resolution?.actualAudioProviderId,
+            resolution?.instanceId?.value,
+            resource?.quality,
+            resource?.cachePolicy,
+            resource?.uri?.toUri()?.scheme,
+            resource?.uri?.toUri()?.host,
         )
 
         val stalled = shouldRecoverStalledPlayback(error.errorCode, error.cause)
